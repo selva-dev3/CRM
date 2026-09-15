@@ -1,3 +1,4 @@
+import typing
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -22,9 +23,11 @@ def _access(scope: str) -> RecordAccessContext:
 
 @pytest.mark.asyncio
 async def test_activity_service_filters_sources_by_existing_permissions(monkeypatch):
-    repository = SimpleNamespace(list=AsyncMock(return_value=[]), count=AsyncMock(return_value=0))
+    repository: typing.Any = SimpleNamespace(
+        list=AsyncMock(return_value=[]), count=AsyncMock(return_value=0)
+    )
     service = ActivityService(repository=repository)
-    user = SimpleNamespace(id="user-1")
+    user: typing.Any = SimpleNamespace(id="user-1")
     monkeypatch.setattr(
         auth_service,
         "get_user_permissions",
@@ -68,9 +71,11 @@ async def test_activity_service_filters_sources_by_existing_permissions(monkeypa
 
 @pytest.mark.asyncio
 async def test_activity_service_honors_api_key_scope(monkeypatch):
-    repository = SimpleNamespace(list=AsyncMock(return_value=[]), count=AsyncMock(return_value=0))
+    repository: typing.Any = SimpleNamespace(
+        list=AsyncMock(return_value=[]), count=AsyncMock(return_value=0)
+    )
     service = ActivityService(repository=repository)
-    user = SimpleNamespace(id="user-1", _api_key_scopes={"leads:read"})
+    user: typing.Any = SimpleNamespace(id="user-1", _api_key_scopes={"leads:read"})
     monkeypatch.setattr(
         auth_service,
         "get_user_permissions",

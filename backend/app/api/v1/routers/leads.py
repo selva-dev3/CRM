@@ -123,7 +123,10 @@ async def bulk_archive_leads(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await lead_service.bulk_archive(
-        db, payload.ids, organization_id=organization_id, actor_id=current_user.id,
+        db,
+        payload.ids,
+        organization_id=organization_id,
+        actor_id=current_user.id,
         current_user=current_user,
     )
 

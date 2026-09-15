@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
-from jose import jwt
+import jwt
 
 from app.core.config import settings
 
@@ -15,7 +15,7 @@ def create_access_token(
     subject: str,
     expires_delta: timedelta | None = None,
     *,
-    token_type: str = "access",
+    token_type: str = "access",  # noqa: S107 - this is a claim value, not a secret
 ) -> str:
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta

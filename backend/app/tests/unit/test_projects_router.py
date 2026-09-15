@@ -68,7 +68,7 @@ def test_project_list_route_bounds_pagination() -> None:
     route = next(
         route
         for route in projects.router.routes
-        if isinstance(route, APIRoute) and route.path == "" and "GET" in route.methods
+        if isinstance(route, APIRoute) and route.path == "" and "GET" in route.methods  # type: ignore[operator]
     )
     params = {parameter.name: parameter for parameter in route.dependant.query_params}
 

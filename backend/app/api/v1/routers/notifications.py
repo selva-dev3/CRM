@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
+from app.core.errors import ForbiddenError
+from app.core.permissions import effective_organization_id
 from app.db.session import get_db
 from app.models.auth import User
 from app.schemas.crm_schemas import (
@@ -125,10 +127,13 @@ async def send_system_alert(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    organization_id = effective_organization_id(current_user)
+    if not organization_id:
+        raise ForbiddenError(message="Authenticated organization context is required")
     return await notification_service.send_system_alert(
         db,
         user_id=current_user.id,
-        org_id=current_user.organization_id,
+        org_id=organization_id,
         title=title,
         message=message,
     )

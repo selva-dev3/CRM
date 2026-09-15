@@ -88,7 +88,7 @@ async def list_deals(
 async def create_deal(
     payload: DealCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     return await deal_service.create_deal(db, payload, current_user)
 
@@ -220,7 +220,11 @@ async def bulk_update_deal_stage(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     return await deal_service.bulk_update_stage(
-        db, payload.ids, stage, organization_id=organization_id, actor_id=current_user.id,
+        db,
+        payload.ids,
+        stage,
+        organization_id=organization_id,
+        actor_id=current_user.id,
         current_user=current_user,
     )
 

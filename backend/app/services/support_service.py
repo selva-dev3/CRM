@@ -35,6 +35,7 @@ class SupportService:
         "Resolved": {"Open", "Closed"},
         "Closed": {"Open"},
     }
+
     @staticmethod
     def org(user: User) -> str:
         value = effective_organization_id(user)
@@ -104,6 +105,8 @@ class SupportService:
             from app.models import SLAPolicy
 
             policy = await db.get(SLAPolicy, payload.sla_policy_id)
+            if policy is None:
+                raise NotFoundError(message="SLA policy not found")
             response_hours, resolution_hours = (
                 policy.response_time_hours,
                 policy.resolution_time_hours,
@@ -313,9 +316,7 @@ class SupportService:
 
     async def article(self, db, user, article_id):
         access = await record_access_service.resolve(db, user, "knowledge_base")
-        article = await support_repository.article(
-            db, self.org(user), article_id, access=access
-        )
+        article = await support_repository.article(db, self.org(user), article_id, access=access)
         if not article:
             raise NotFoundError(message="Knowledge article not found")
         return article

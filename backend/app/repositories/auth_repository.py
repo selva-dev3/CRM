@@ -33,7 +33,9 @@ class AuthRepository:
         await db.execute(text("SELECT pg_advisory_xact_lock(7242310908)"))
 
     async def get_platform_admin(self, db: AsyncSession) -> User | None:
-        result = await db.execute(select(User).where(User.is_platform_admin.is_(True)).with_for_update())
+        result = await db.execute(
+            select(User).where(User.is_platform_admin.is_(True)).with_for_update()
+        )
         return result.scalar_one_or_none()
 
     async def get_unique_email_owner(self, db: AsyncSession, email: str) -> User | None:
@@ -168,8 +170,13 @@ class AuthRepository:
         return await db.get(UserSession, token_digest)
 
     async def create_access_session(
-        self, db: AsyncSession, *, token_digest: str, user_id: str,
-        family_id: str | None = None, expires_at: datetime | None = None
+        self,
+        db: AsyncSession,
+        *,
+        token_digest: str,
+        user_id: str,
+        family_id: str | None = None,
+        expires_at: datetime | None = None,
     ) -> UserSession:
         session = UserSession(
             id=token_digest,
@@ -335,10 +342,7 @@ class AuthRepository:
     ) -> Role | None:
         ownership_filter = Role.organization_id == organization_id
         result = await db.execute(
-            select(Role)
-            .where(Role.id == role_value, ownership_filter)
-            .limit(1)
-            .with_for_update()
+            select(Role).where(Role.id == role_value, ownership_filter).limit(1).with_for_update()
         )
         role = result.scalars().first()
         if role:

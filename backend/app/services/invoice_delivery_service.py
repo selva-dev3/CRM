@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from html import escape
 from io import BytesIO
+from typing import Any
 from uuid import uuid4
 
 from app.core.config import settings
@@ -131,7 +132,7 @@ class InvoiceDeliveryService:
                     or invoice.public_token_expires_at <= now
                 ):
                     raise ValueError("Invoice is not eligible for delivery")
-                document = {
+                document: dict[str, Any] = {
                     "organization": {
                         "name": organization.name,
                         "address": organization.address,

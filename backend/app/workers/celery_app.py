@@ -42,6 +42,10 @@ celery_app.conf.beat_schedule = {
         "options": {"queue": "organization_cleanup"},
         "schedule": 30.0,
     },
+    "reconcile-object-storage": {
+        "task": "app.workers.tasks.reconcile_object_storage",
+        "schedule": crontab(minute=20),
+    },
     "deliver-pending-emails": {
         "task": "app.workers.tasks.deliver_pending_emails",
         "schedule": 30.0,

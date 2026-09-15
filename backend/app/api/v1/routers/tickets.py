@@ -248,9 +248,7 @@ async def upload_ticket_attachment(
     user: User = Depends(get_current_user),
 ):
     await support_service.ticket(db, user, ticket_id)
-    return await document_service.upload_document(
-        db, file, current_user=user, ticket_id=ticket_id
-    )
+    return await document_service.upload_document(db, file, current_user=user, ticket_id=ticket_id)
 
 
 @router.get(

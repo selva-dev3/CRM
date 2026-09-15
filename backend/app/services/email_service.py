@@ -12,18 +12,29 @@ class EmailDeliveryUnknownError(RuntimeError):
     """Provider may have accepted the email; do not resend without reconciliation."""
 
 
-def send_tracked_email(*, to_email: str, subject: str, html_content: str,
-                       idempotency_key: str) -> str:
+def send_tracked_email(
+    *, to_email: str, subject: str, html_content: str, idempotency_key: str
+) -> str:
     """Brevo receipt, not an assertion of inbox delivery. Never log message contents."""
     if not settings.BREVO_API_KEY:
         raise ValueError("Email provider is not configured")
     try:
-        response = requests.post("https://api.brevo.com/v3/smtp/email", timeout=30,
-            headers={"accept": "application/json", "api-key": settings.BREVO_API_KEY,
-                     "content-type": "application/json"},
-            json={"sender": {"name": settings.EMAILS_FROM_NAME, "email": settings.EMAILS_FROM_EMAIL},
-                  "to": [{"email": to_email}], "subject": subject, "htmlContent": html_content,
-                  "headers": {"idempotencyKey": idempotency_key}})
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            timeout=30,
+            headers={
+                "accept": "application/json",
+                "api-key": settings.BREVO_API_KEY,
+                "content-type": "application/json",
+            },
+            json={
+                "sender": {"name": settings.EMAILS_FROM_NAME, "email": settings.EMAILS_FROM_EMAIL},
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "htmlContent": html_content,
+                "headers": {"idempotencyKey": idempotency_key},
+            },
+        )
     except requests.RequestException as exc:
         raise EmailDeliveryUnknownError("Email delivery outcome is unknown") from exc
     if response.status_code in {200, 201}:

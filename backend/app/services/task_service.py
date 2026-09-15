@@ -122,10 +122,12 @@ class TaskService:
             await self.project_repository.recalculate_progress(db, project)
 
     async def _validate_project_assignment(
-        self, db: AsyncSession, project_id: str | None, assigned_to: str
+        self, db: AsyncSession, project_id: str | None, assigned_to: str | None
     ) -> None:
-        if project_id and not await self.project_repository.get_member(
-            db, project_id, assigned_to
+        if (
+            project_id
+            and assigned_to
+            and not await self.project_repository.get_member(db, project_id, assigned_to)
         ):
             raise APIException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -154,9 +156,7 @@ class TaskService:
             )
 
     @staticmethod
-    async def _require_permission(
-        db: AsyncSession, current_user: User, permission: str
-    ) -> None:
+    async def _require_permission(db: AsyncSession, current_user: User, permission: str) -> None:
         permissions = set(await auth_service.get_user_permissions(db, current_user))
         if permission not in permissions or not api_key_scope_allows(current_user, permission):
             raise ForbiddenError(message=f"Missing required permission: {permission}")
@@ -167,7 +167,7 @@ class TaskService:
         *,
         assigned_input: str | None,
         organization_id: str,
-        default_user_id: str,
+        default_user_id: str | None,
     ) -> str:
         if assigned_input and str(assigned_input).strip():
             value = str(assigned_input).strip()
@@ -177,6 +177,11 @@ class TaskService:
             if user:
                 return user.id
             raise NotFoundError(message=f"User '{value}' not found")
+        if default_user_id is None:
+            raise APIException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                message="Task assignee is required.",
+            )
         return default_user_id
 
     async def list_tasks(
@@ -480,7 +485,9 @@ class TaskService:
         if "project_id" in updates:
             task.project_id = updates["project_id"]
         await self._validate_project_assignment(db, task.project_id, task.assigned_to)
-        await self._validate_project_due_date(db, task.project_id, task.organization_id, task.due_date)
+        await self._validate_project_due_date(
+            db, task.project_id, task.organization_id, task.due_date
+        )
         if "ticket_id" in updates:
             task.ticket_id = await self.repository.validate_ticket(
                 db, updates["ticket_id"], task.organization_id
@@ -499,9 +506,7 @@ class TaskService:
                 db,
                 organization_id=task.organization_id,
                 access_by_module=(
-                    await resolve_crm_record_access(db, current_user)
-                    if current_user
-                    else None
+                    await resolve_crm_record_access(db, current_user) if current_user else None
                 ),
                 **merged,
             )

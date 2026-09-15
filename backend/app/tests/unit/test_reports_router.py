@@ -199,7 +199,7 @@ async def test_list_custom_reports_with_pagination(monkeypatch):
     mock_list.assert_awaited_once_with(
         db, current_user=user, limit=50, offset=10, search="pipeline"
     )
-    report_service.count_custom_reports.assert_awaited_once_with(
+    report_service.count_custom_reports.assert_awaited_once_with(  # type: ignore[attr-defined]
         db, current_user=user, search="pipeline"
     )
 
@@ -218,9 +218,7 @@ async def test_list_scheduled_reports_with_pagination(monkeypatch):
     )
     assert res == []
     assert response.headers["X-Total-Count"] == "8"
-    mock_list.assert_awaited_once_with(
-        db, current_user=user, limit=30, offset=5, search="weekly"
-    )
-    report_service.count_scheduled_reports.assert_awaited_once_with(
+    mock_list.assert_awaited_once_with(db, current_user=user, limit=30, offset=5, search="weekly")
+    report_service.count_scheduled_reports.assert_awaited_once_with(  # type: ignore[attr-defined]
         db, current_user=user, search="weekly"
     )

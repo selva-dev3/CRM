@@ -9,6 +9,7 @@ from app.models import User
 from app.models.note import Note
 from app.repositories.note_repository import NoteRepository
 from app.services.note_service import NoteService, note_to_dict
+from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr, require_await
 
 
 def _make_note(**overrides) -> Note:
@@ -26,7 +27,7 @@ def _make_note(**overrides) -> Note:
 
 
 def _service_with(repo: NoteRepository) -> NoteService:
-    repo.get_display_context = AsyncMock(return_value={})  # type: ignore[method-assign]
+    replace_attr(repo, "get_display_context", AsyncMock(return_value={}))
     return NoteService(repository=repo)
 
 
@@ -76,7 +77,7 @@ def test_note_to_dict_resolves_entity_and_author_names_without_exposing_them_as_
 @pytest.mark.asyncio
 async def test_display_context_query_scopes_related_names_to_the_note_organization():
     result_mock = MagicMock()
-    result_mock.mappings.return_value.all.return_value = [
+    as_mock(result_mock.mappings.return_value.all).return_value = [
         {
             "id": "note-1",
             "lead_name": "Alex Morgan",
@@ -95,7 +96,7 @@ async def test_display_context_query_scopes_related_names_to_the_note_organizati
 
     assert context["note-1"]["lead_name"] == "Alex Morgan"
     assert context["note-1"]["creator_name"] == "Ada Lovelace"
-    statement = str(db.execute.await_args.args[0])
+    statement = str(require_await(db.execute).args[0])
     assert "leads.organization_id" in statement
     assert "contacts.organization_id" in statement
     assert "companies.organization_id" in statement
@@ -107,8 +108,8 @@ async def test_display_context_query_scopes_related_names_to_the_note_organizati
 @pytest.mark.asyncio
 async def test_repository_entity_queries_match_mixed_case_and_whitespace():
     result = MagicMock()
-    result.scalars.return_value.all.return_value = []
-    result.scalar_one.return_value = 0
+    as_mock(result.scalars.return_value.all).return_value = []
+    as_mock(result.scalar_one).return_value = 0
     db = AsyncMock(spec=AsyncSession)
     db.execute = AsyncMock(return_value=result)
     repository = NoteRepository()
@@ -138,11 +139,9 @@ async def test_repository_entity_queries_match_mixed_case_and_whitespace():
         entity_id="contact-1",
     )
 
-    assert db.execute.await_count == 4
-    for call in db.execute.await_args_list:
-        statement = str(
-            call.args[0].compile(compile_kwargs={"literal_binds": True})
-        ).lower()
+    assert as_async_mock(db.execute).await_count == 4
+    for call in as_async_mock(db.execute).await_args_list:
+        statement = str(call.args[0].compile(compile_kwargs={"literal_binds": True})).lower()
         assert "lower(trim(notes.entity_type)) = 'contact'" in statement
 
 
@@ -155,7 +154,7 @@ async def test_get_note_raises_not_found_when_missing():
 
     with pytest.raises(NotFoundError):
         await service.get_note(db, "missing-note", _user())
-    repo.get_by_id.assert_awaited_once_with(
+    as_async_mock(repo.get_by_id).assert_awaited_once_with(
         db, "missing-note", "org-1", access=ANY, target_access=ANY
     )
 
@@ -174,7 +173,7 @@ async def test_list_for_entity_normalizes_legacy_title_case():
         current_user=_user(),
     )
 
-    repo.list_by_entity.assert_awaited_once_with(
+    as_async_mock(repo.list_by_entity).assert_awaited_once_with(
         db,
         entity_type="company",
         entity_id="company-1",
@@ -188,7 +187,7 @@ async def test_list_for_entity_normalizes_legacy_title_case():
 
 def _db_with_no_users() -> AsyncMock:
     result_mock = MagicMock()
-    result_mock.scalars.return_value.first.return_value = None
+    as_mock(result_mock.scalars.return_value.first).return_value = None
     db = AsyncMock(spec=AsyncSession)
     db.execute = AsyncMock(return_value=result_mock)
     return db
@@ -218,7 +217,7 @@ async def test_create_note_resolves_org_and_serializes(monkeypatch):
 
     assert result["id"] == "note-1"
     assert result["entity_type"] == "lead"
-    repo.create.assert_awaited_once()
+    as_async_mock(repo.create).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -246,7 +245,7 @@ async def test_add_for_entity_uses_current_user_as_created_by(monkeypatch):
 
     assert result["entity_type"] == "contact"
     assert result["created_by"] == "usr-7"
-    repo.create.assert_awaited_once_with(
+    as_async_mock(repo.create).assert_awaited_once_with(
         db,
         organization_id="org-1",
         entity_type="contact",

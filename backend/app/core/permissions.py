@@ -43,10 +43,14 @@ async def is_super_admin_user(db, user) -> bool:
 def ensure_can_assign_role(*, actor_is_super_admin: bool, target_is_super_admin: bool) -> None:
     """Platform identity is provisioned once, never assigned through tenant APIs."""
     if target_is_super_admin:
-        raise ForbiddenError(message="The platform Super Admin cannot be assigned through user management.")
+        raise ForbiddenError(
+            message="The platform Super Admin cannot be assigned through user management."
+        )
 
 
 def ensure_tenant_managed_user(user) -> None:
     """Protect the platform principal independently of email or selected organization."""
     if getattr(user, "is_platform_admin", False) is True:
-        raise ForbiddenError(message="The platform Super Admin cannot be managed as an organization user.")
+        raise ForbiddenError(
+            message="The platform Super Admin cannot be managed as an organization user."
+        )

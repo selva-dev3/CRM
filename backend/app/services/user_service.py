@@ -234,7 +234,7 @@ class UserService:
         if (
             not organization
             or not organization.is_active
-            or organization.status.strip().lower() != "active"
+            or (organization.status or "").strip().lower() != "active"
         ):
             raise APIException(status_code=403, message="Organization is unavailable")
         if await lifecycle.email_in_use(db, email):
@@ -351,7 +351,7 @@ class UserService:
             if (
                 not organization
                 or not organization.is_active
-                or organization.status.strip().lower() != "active"
+                or (organization.status or "").strip().lower() != "active"
             ):
                 raise APIException(status_code=403, message="Organization is unavailable")
             member_count = await lifecycle.tenant_member_count(db, org_id)
@@ -514,8 +514,11 @@ class UserService:
 
     async def get_user(self, db: AsyncSession, user_id: str, *, current_user: User) -> dict:
         user = await self._require_same_org_user(db, user_id, current_user)
+        organization_id = effective_organization_id(current_user)
+        if not organization_id:
+            raise APIException(status_code=403, message="Authenticated organization is required")
         role_names = await self.repository.effective_role_names_for_users(
-            db, [user], effective_organization_id(current_user)
+            db, [user], organization_id
         )
         result = user_to_dict(user)
         result["role"] = role_names.get(user.id) or "User"

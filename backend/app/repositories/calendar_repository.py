@@ -45,8 +45,10 @@ class CalendarRepository:
         end: datetime | None = None,
         access: RecordAccessContext | None = None,
     ) -> int:
-        stmt = select(func.count()).select_from(CalendarEventModel).where(
-            CalendarEventModel.organization_id == organization_id
+        stmt = (
+            select(func.count())
+            .select_from(CalendarEventModel)
+            .where(CalendarEventModel.organization_id == organization_id)
         )
         stmt = self._apply_filters(stmt, search=search, start=start, end=end, access=access)
         return int((await db.execute(stmt)).scalar_one())

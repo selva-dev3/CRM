@@ -107,9 +107,7 @@ class ContactRepository:
         )
         if access_filter is not None:
             filters.append(access_filter)
-        result = await db.execute(
-            select(Contact).where(*filters)
-        )
+        result = await db.execute(select(Contact).where(*filters))
         return list(result.scalars().all())
 
     async def list_by_company(

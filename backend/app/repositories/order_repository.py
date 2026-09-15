@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import builtins
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +20,7 @@ class OrderRepository:
         status: str | None = None,
         search: str | None = None,
         access=None,
-    ) -> list[SalesOrder]:
+    ) -> builtins.list[SalesOrder]:
         conditions = [SalesOrder.organization_id == organization_id]
         access_filter = record_access_filter(
             access,
@@ -120,7 +122,7 @@ class OrderRepository:
 
     async def list_items(
         self, db: AsyncSession, *, order_id: str, organization_id: str
-    ) -> list[SalesOrderItem]:
+    ) -> builtins.list[SalesOrderItem]:
         result = await db.execute(
             select(SalesOrderItem)
             .join(SalesOrder, SalesOrder.id == SalesOrderItem.order_id)

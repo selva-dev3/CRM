@@ -92,15 +92,15 @@ async def lead_call_database():
     finally:
         async with sessions() as db:
             await db.execute(delete(UserRole).where(UserRole.role_id == role.id))
-            await db.execute(delete(Organization).where(Organization.id.in_([org.id, foreign_org.id])))
+            await db.execute(
+                delete(Organization).where(Organization.id.in_([org.id, foreign_org.id]))
+            )
             await db.commit()
         await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_lead_call_create_retry_timeline_update_delete(
-    lead_call_database, monkeypatch
-):
+async def test_lead_call_create_retry_timeline_update_delete(lead_call_database, monkeypatch):
     sessions, org, user, lead, contact, _ = lead_call_database
     payload = CallLogBase(
         lead_id=lead.id,
@@ -209,7 +209,13 @@ async def test_http_lead_call_workflow_enforces_schema_permission_and_idempotenc
         async with sessions() as db:
             yield db
 
-    granted_permissions = ["leads:read", "calls:read", "calls:create", "calls:update", "calls:delete"]
+    granted_permissions = [
+        "leads:read",
+        "calls:read",
+        "calls:create",
+        "calls:update",
+        "calls:delete",
+    ]
 
     async def permissions(*_args, **_kwargs):
         return granted_permissions

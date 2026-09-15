@@ -8,7 +8,7 @@ from app.models import RolePermission, UserRole
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 MERGE_REVISION = "e8f9a0b1c2d3"
-HEAD_REVISION = "j7f9b1d3e5a6"
+HEAD_REVISION = "k8b9c0d1e2f3"
 TENANT_CATEGORY_REVISION = "i6e8a0b2c4d5"
 TICKET_DOCUMENT_REVISION = "h5d7f9a1c3e4"
 PROJECT_MEMBERS_REVISION = "g4c6e8f0b2d3"
@@ -45,10 +45,10 @@ def test_rbac_revision_resolves_existing_database_stamp():
     assert revision is not None
     assert revision.down_revision == "o8d9e0f1a2b3"
     assert [
-        migration.revision
-        for migration in script.iterate_revisions("heads", "p9e0f1a2b3c4")
+        migration.revision for migration in script.iterate_revisions("heads", "p9e0f1a2b3c4")
     ] == [
         HEAD_REVISION,
+        "j7f9b1d3e5a6",
         TENANT_CATEGORY_REVISION,
         TICKET_DOCUMENT_REVISION,
         PROJECT_MEMBERS_REVISION,
@@ -74,6 +74,7 @@ def test_rbac_revision_resolves_existing_database_stamp():
         migration.revision for migration in script.iterate_revisions("heads", "o8d9e0f1a2b3")
     ] == [
         HEAD_REVISION,
+        "j7f9b1d3e5a6",
         TENANT_CATEGORY_REVISION,
         TICKET_DOCUMENT_REVISION,
         PROJECT_MEMBERS_REVISION,
@@ -102,6 +103,7 @@ def test_merge_revision_joins_ai_and_deal_custom_field_heads():
     revision = _script_directory().get_revision(MERGE_REVISION)
 
     assert revision is not None
+    assert isinstance(revision.down_revision, (list, tuple))
     assert set(revision.down_revision) == EXPECTED_PARENTS
 
 
@@ -121,8 +123,7 @@ def test_whatsapp_contact_context_follows_provider_migration():
 
 def test_whatsapp_contact_indexes_are_created_concurrently():
     source = (
-        BACKEND_ROOT
-        / "alembic/versions/y9c0d1e2f3g4_whatsapp_contact_context_indexes.py"
+        BACKEND_ROOT / "alembic/versions/y9c0d1e2f3g4_whatsapp_contact_context_indexes.py"
     ).read_text()
 
     assert "autocommit_block" in source
@@ -131,10 +132,7 @@ def test_whatsapp_contact_indexes_are_created_concurrently():
 
 
 def test_contact_email_history_indexes_are_non_blocking_without_bulk_backfill():
-    source = (
-        BACKEND_ROOT
-        / "alembic/versions/z0d1e2f3g4h5_contact_email_history.py"
-    ).read_text()
+    source = (BACKEND_ROOT / "alembic/versions/z0d1e2f3g4h5_contact_email_history.py").read_text()
 
     assert "autocommit_block" in source
     assert source.count("CONCURRENTLY") == 4
@@ -154,9 +152,7 @@ def test_susanoox_migration_updates_only_active_provider_configuration():
 
 
 def test_rbac_migration_normalizes_catalog_and_remaps_all_legacy_role_references():
-    source = (
-        BACKEND_ROOT / "alembic/versions/u5e6f7a8b9c0_harden_rbac_integrity.py"
-    ).read_text()
+    source = (BACKEND_ROOT / "alembic/versions/u5e6f7a8b9c0_harden_rbac_integrity.py").read_text()
 
     assert "SET key = approved.key" in source
     assert "lower(btrim(permission.key)) = approved.key" in source

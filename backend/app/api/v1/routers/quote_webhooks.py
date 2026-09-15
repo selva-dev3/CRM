@@ -43,8 +43,10 @@ async def brevo_quote_webhook(
     x_brevo_webhook_secret: str | None = Header(None),
 ):
     configured_secret = settings.BREVO_WEBHOOK_SECRET
-    if not configured_secret or not x_brevo_webhook_secret or not hmac.compare_digest(
-        x_brevo_webhook_secret, configured_secret
+    if (
+        not configured_secret
+        or not x_brevo_webhook_secret
+        or not hmac.compare_digest(x_brevo_webhook_secret, configured_secret)
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook")
 
@@ -65,9 +67,7 @@ async def brevo_quote_webhook(
 
     async with AsyncSessionLocal() as db:
         existing_event = await db.scalar(
-            select(QuoteDeliveryAttempt).where(
-                QuoteDeliveryAttempt.provider_event_id == event_id
-            )
+            select(QuoteDeliveryAttempt).where(QuoteDeliveryAttempt.provider_event_id == event_id)
         )
         if existing_event:
             return {"status": "already_processed"}

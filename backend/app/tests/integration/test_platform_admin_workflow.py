@@ -32,11 +32,14 @@ from app.services.invitation_service import accept_organization_invitation
 from app.services.organization_lifecycle_service import OrganizationLifecycleService
 from app.services.platform_admin_service import PlatformAdminService
 from app.services.role_service import ALL_STANDARD_PERMISSIONS
+from app.tests.mock_helpers import replace_attr
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("legacy_platform_role", [True, False])
-async def test_migration_singleton_provisioning_and_same_login_across_organizations(monkeypatch, legacy_platform_role):
+async def test_migration_singleton_provisioning_and_same_login_across_organizations(
+    monkeypatch, legacy_platform_role
+):
     url = os.getenv("CRM_WORKFLOW_TEST_DATABASE_URL")
     if not url:
         pytest.skip("An isolated PostgreSQL workflow database is required")
@@ -69,7 +72,10 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
                 VALUES ('intended-user','Platform','original@example.com',:hash,
                             :role,'original-org',true,true)
             """),
-                {"hash": original_hash, "role": "super_admin" if legacy_platform_role else "Sales Executive"},
+                {
+                    "hash": original_hash,
+                    "role": "super_admin" if legacy_platform_role else "Sales Executive",
+                },
             )
         await asyncio.to_thread(command.upgrade, config, "head")
         if not legacy_platform_role:
@@ -93,26 +99,33 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
                 )
             async with sessions() as db:
                 failed_provisioner = PlatformAdminService()
-                failed_provisioner.repository.revoke_all_user_sessions = AsyncMock(
-                    side_effect=RuntimeError("Injected session revocation failure")
+                replace_attr(
+                    failed_provisioner.repository,
+                    "revoke_all_user_sessions",
+                    AsyncMock(side_effect=RuntimeError("Injected session revocation failure")),
                 )
                 with pytest.raises(RuntimeError, match="Injected"):
                     await failed_provisioner.provision(
-                        db, email="superadmin@mycrm.com", password=SecretStr(test_password),
+                        db,
+                        email="superadmin@mycrm.com",
+                        password=SecretStr(test_password),
                         existing_user_id="intended-user",
                     )
                 preserved = await db.get(User, "intended-user")
-                assert not preserved.is_platform_admin
-                assert preserved.organization_id == "original-org"
-                assert preserved.hashed_password == original_hash
-                assert await db.scalar(text(
-                    "SELECT role_id FROM user_roles WHERE user_id='intended-user'"
-                )) == tenant_role_id
+                assert not preserved.is_platform_admin  # type: ignore[union-attr]
+                assert preserved.organization_id == "original-org"  # type: ignore[union-attr]
+                assert preserved.hashed_password == original_hash  # type: ignore[union-attr]
+                assert (
+                    await db.scalar(
+                        text("SELECT role_id FROM user_roles WHERE user_id='intended-user'")
+                    )
+                    == tenant_role_id
+                )
         async with sessions() as db:
             user = await db.get(User, "intended-user")
-            assert user.is_platform_admin is legacy_platform_role
-            assert user.organization_id == (None if legacy_platform_role else "original-org")
-            assert user.hashed_password == original_hash
+            assert user.is_platform_admin is legacy_platform_role  # type: ignore[union-attr]
+            assert user.organization_id == (None if legacy_platform_role else "original-org")  # type: ignore[union-attr]
+            assert user.hashed_password == original_hash  # type: ignore[union-attr]
             # Explicit provisioning must preserve the migrated identity.
             user_id = await PlatformAdminService().provision(
                 db,
@@ -121,15 +134,17 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
                 existing_user_id="intended-user",
             )
             assert user_id == "intended-user"
-            assert verify_password(test_password, user.hashed_password)
-            assert user.hashed_password != test_password
+            assert verify_password(test_password, user.hashed_password)  # type: ignore[union-attr]
+            assert user.hashed_password != test_password  # type: ignore[union-attr]
         async with sessions() as db:
             with pytest.raises(ConflictError):
                 await PlatformAdminService().provision(
                     db, email="duplicate@example.com", password=SecretStr(test_password)
                 )
 
-        monkeypatch.setattr("app.services.organization_lifecycle_service.send_user_invite_email", lambda **_: True)
+        monkeypatch.setattr(
+            "app.services.organization_lifecycle_service.send_user_invite_email", lambda **_: True
+        )
         async with sessions() as db:
             await RoleRepository().seed_permissions(db, ALL_STANDARD_PERMISSIONS, commit=False)
             await RoleRepository().synchronize_system_roles(db)
@@ -138,13 +153,27 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
         for name in ("A", "B"):
             async with sessions() as db:
                 actor = await db.get(User, "intended-user")
-                result = await OrganizationLifecycleService().create(db, PlatformOrganizationCreate(
-                    name=f"Organization {name}", initial_admin=InitialAdminInvitation(
-                        name=f"Admin {name}", email=f"admin-{name.lower()}@example.com",
-                    )), actor)
+                assert actor is not None
+                result = await OrganizationLifecycleService().create(
+                    db,
+                    PlatformOrganizationCreate(
+                        name=f"Organization {name}",
+                        initial_admin=InitialAdminInvitation(
+                            name=f"Admin {name}",
+                            email=f"admin-{name.lower()}@example.com",
+                        ),
+                    ),
+                    actor,
+                )
                 org_ids.append(result.organization.id)
-                invitation = await db.get(OrganizationInvitation, result.invitation.id)
-                await accept_organization_invitation(db, invitation.token, AcceptInvitationRequest(password=test_password))
+                assert result.invitation is not None
+                invitation = await db.get(OrganizationInvitation, result.invitation.id)  # type: ignore[union-attr]
+                assert invitation is not None
+                await accept_organization_invitation(
+                    db,
+                    invitation.token,
+                    AcceptInvitationRequest(password=test_password),  # type: ignore[union-attr]
+                )
         async with sessions() as db:
             assert await db.scalar(text("SELECT count(*) FROM users WHERE is_platform_admin")) == 1
             login = await AuthService().login(
@@ -295,10 +324,10 @@ async def test_migration_singleton_provisioning_and_same_login_across_organizati
             await db.delete(original)
             await db.commit()
             user = await db.get(User, "intended-user")
-            assert user.is_platform_admin and user.organization_id is None and user.is_active
+            assert user.is_platform_admin and user.organization_id is None and user.is_active  # type: ignore[union-attr]
             assert (
                 await db.scalars(select(User).where(User.is_platform_admin))
-            ).one().id == user.id
+            ).one().id == user.id  # type: ignore[union-attr]
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/organizations/all", headers=headers)
             assert response.status_code == 200

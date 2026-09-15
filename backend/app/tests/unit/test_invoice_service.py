@@ -20,6 +20,7 @@ from app.services.invoice_service import (
     DealNotClosedWonError,
     InvoiceService,
 )
+from app.tests.mock_helpers import as_async_mock, replace_attr
 
 
 def _make_user() -> User:
@@ -96,17 +97,21 @@ def _make_invoice(**overrides) -> Invoice:
 
 
 def _service_with(repo: InvoiceRepository) -> InvoiceService:
-    repo.lock_numbering = AsyncMock(
-        return_value=SimpleNamespace(
-            id="org-1",
-            is_active=True,
-            invoice_prefix="INV",
-            invoice_sequence=0,
-            currency="USD",
-        )
+    replace_attr(
+        repo,
+        "lock_numbering",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                id="org-1",
+                is_active=True,
+                invoice_prefix="INV",
+                invoice_sequence=0,
+                currency="USD",
+            )
+        ),
     )
-    repo.advance_numbering = AsyncMock(return_value=1)
-    repo.record_creation = AsyncMock()
+    replace_attr(repo, "advance_numbering", AsyncMock(return_value=1))
+    replace_attr(repo, "record_creation", AsyncMock())
     quotes = MagicMock(spec=QuoteRepository)
     quotes.get_automatic = AsyncMock(return_value=None)
     return InvoiceService(repository=repo, quote_repository=quotes)
@@ -223,12 +228,12 @@ async def test_conversion_maps_customer_and_line_items(patched_org):
     assert result["items"][0]["quantity"] == 2
     assert result["items"][0]["unit_price"] == 500.0
 
-    created_kwargs = repo.create.await_args_list[-1].kwargs["data"]
+    created_kwargs = as_async_mock(repo.create).await_args_list[-1].kwargs["data"]
     assert created_kwargs["organization_id"] == "org-1"
     assert created_kwargs["status"] == INVOICE_STATUS_DRAFT
     assert created_kwargs["deal_id"] == "deal-1"
     assert created_kwargs["currency"] == "USD"
-    db.commit.assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -256,7 +261,7 @@ async def test_conversion_computes_totals_server_side(patched_org):
 
     await service.create_invoice_from_deal(db, "deal-1", _make_user())
 
-    data = repo.create.await_args_list[-1].kwargs["data"]
+    data = as_async_mock(repo.create).await_args_list[-1].kwargs["data"]
     # subtotal = round(3*199.99 + 1*50.05, 2) = round(650.02, 2)
     assert data["subtotal"] == Decimal("650.02")
     assert data["tax_total"] == Decimal("0.00")
@@ -390,7 +395,7 @@ async def test_concurrent_conversion_returns_existing_on_unique_violation(patche
     result = await service.create_invoice_from_deal(db, "deal-1", _make_user())
 
     assert result["id"] == "inv-1"
-    db.rollback.assert_awaited_once()
+    as_async_mock(db.rollback).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -409,7 +414,7 @@ async def test_unique_violation_without_winner_raises_conflict(patched_org):
     with pytest.raises(ConflictError):
         await service.create_invoice_from_deal(db, "deal-1", _make_user())
 
-    db.rollback.assert_awaited_once()
+    as_async_mock(db.rollback).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -429,7 +434,7 @@ async def test_commit_failure_rolls_back_no_partial_invoice(patched_org):
         await service.create_invoice_from_deal(db, "deal-1", _make_user())
 
     assert exc_info.value.code == "INVOICE_CREATE_FAILED"
-    db.rollback.assert_awaited_once()
+    as_async_mock(db.rollback).assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +473,7 @@ async def test_line_items_use_flushed_invoice_id(patched_org):
     result = await service.create_invoice_from_deal(db, "deal-1", _make_user())
 
     assert captured and captured[0]["invoice_id"] == "inv-flushed"
-    assert db.flush.await_count >= 1
+    assert as_async_mock(db.flush).await_count >= 1
     assert result["id"] == "inv-flushed"
 
 
@@ -493,8 +498,8 @@ async def test_send_queues_real_delivery(patched_org):
 
     assert invoice.status == "Finalized"
     assert invoice.sent_at is None
-    repo.queue_delivery.assert_awaited_once()
-    db.commit.assert_awaited_once()
+    as_async_mock(repo.queue_delivery).assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -513,7 +518,7 @@ async def test_send_queues_overdue_invoice_without_faking_sent_state(patched_org
 
     assert invoice.status == "Accepted"
     assert invoice.sent_at is None
-    repo.queue_delivery.assert_awaited_once()
+    as_async_mock(repo.queue_delivery).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -531,8 +536,8 @@ async def test_draft_invoice_cannot_be_sent(patched_org):
             db, invoice_id="inv-1", organization_id="org-1", recipient_email="a@b.com"
         )
     assert invoice.status == "Draft"
-    repo.queue_delivery.assert_not_awaited()
-    db.commit.assert_not_awaited()
+    as_async_mock(repo.queue_delivery).assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()
     notify = cast(Any, integration_service).notify_slack_event
     notify.assert_not_awaited()
 
@@ -547,8 +552,10 @@ async def test_paid_invoice_cannot_be_deleted(patched_org):
 
     with pytest.raises(ConflictError):
         await service.delete_invoice(db, invoice_id="inv-1", organization_id="org-1")
-    db.commit.assert_not_awaited()
-    repo.lock_scoped.assert_awaited_once_with(db, invoice_id="inv-1", organization_id="org-1")
+    as_async_mock(db.commit).assert_not_awaited()
+    as_async_mock(repo.lock_scoped).assert_awaited_once_with(
+        db, invoice_id="inv-1", organization_id="org-1"
+    )
 
 
 @pytest.mark.asyncio
@@ -562,10 +569,12 @@ async def test_delete_locks_scoped_draft_before_deleting():
         db, invoice_id="inv-1", organization_id="org-1"
     )
     assert result is invoice
-    repo.lock_scoped.assert_awaited_once_with(db, invoice_id="inv-1", organization_id="org-1")
+    as_async_mock(repo.lock_scoped).assert_awaited_once_with(
+        db, invoice_id="inv-1", organization_id="org-1"
+    )
     repo.get_scoped.assert_not_called()
-    repo.delete.assert_awaited_once_with(db, invoice)
-    db.commit.assert_awaited_once()
+    as_async_mock(repo.delete).assert_awaited_once_with(db, invoice)
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -578,9 +587,11 @@ async def test_delete_foreign_invoice_never_deletes():
         await InvoiceService(repository=repo).delete_invoice(
             db, invoice_id="inv-1", organization_id="foreign"
         )
-    repo.lock_scoped.assert_awaited_once_with(db, invoice_id="inv-1", organization_id="foreign")
-    repo.delete.assert_not_awaited()
-    db.commit.assert_not_awaited()
+    as_async_mock(repo.lock_scoped).assert_awaited_once_with(
+        db, invoice_id="inv-1", organization_id="foreign"
+    )
+    as_async_mock(repo.delete).assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -595,7 +606,9 @@ async def test_get_invoice_scoped_by_organization():
     result = await service.get_invoice(db=db, invoice_id="inv-1", organization_id="org-1")
 
     assert result["id"] == "inv-1"
-    repo.get_scoped.assert_awaited_once_with(db, invoice_id="inv-1", organization_id="org-1")
+    as_async_mock(repo.get_scoped).assert_awaited_once_with(
+        db, invoice_id="inv-1", organization_id="org-1"
+    )
 
 
 @pytest.mark.asyncio

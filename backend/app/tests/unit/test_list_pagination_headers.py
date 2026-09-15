@@ -283,14 +283,16 @@ async def test_whatsapp_message_history_exposes_total(monkeypatch):
 async def test_product_list_exposes_filtered_total(monkeypatch):
     db = AsyncMock(spec=AsyncSession)
     response = Response()
-    expected = [{
-        "id": "product-1",
-        "name": "Support",
-        "sku": "SUP-1",
-        "price": 25.0,
-        "category": "Service",
-        "in_stock_quantity": 8,
-    }]
+    expected = [
+        {
+            "id": "product-1",
+            "name": "Support",
+            "sku": "SUP-1",
+            "price": 25.0,
+            "category": "Service",
+            "in_stock_quantity": 8,
+        }
+    ]
     list_products = AsyncMock(return_value=(expected, 27))
     monkeypatch.setattr(products.product_service, "list_products", list_products)
 

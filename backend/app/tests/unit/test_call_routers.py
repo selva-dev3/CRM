@@ -1,4 +1,5 @@
 import inspect
+import typing
 from unittest.mock import AsyncMock
 
 import pytest
@@ -15,7 +16,11 @@ def _required_permissions(route: APIRoute) -> set[str]:
     for dependency in route.dependencies:
         call = dependency.dependency
         if getattr(call, "__name__", "") == "permission_dependency":
-            permissions.add(inspect.getclosurevars(call).nonlocals["permission"])
+            permissions.add(
+                inspect.getclosurevars(
+                    typing.cast(typing.Callable[..., typing.Any], call)
+                ).nonlocals["permission"]
+            )
     return permissions
 
 
@@ -62,9 +67,9 @@ async def test_lead_create_route_uses_path_lead_and_shared_call_service(monkeypa
         current_user=user,
     )
 
-    forwarded = service_call.await_args.args[1]
+    forwarded = service_call.await_args.args[1]  # type: ignore[union-attr]
     assert forwarded.lead_id == "path-lead"
     assert forwarded.contact_id == "contact-1"
     assert forwarded.company_id == "company-1"
     assert forwarded.deal_id == "deal-1"
-    assert service_call.await_args.kwargs["idempotency_key"] == "request-1"
+    assert service_call.await_args.kwargs["idempotency_key"] == "request-1"  # type: ignore[union-attr]

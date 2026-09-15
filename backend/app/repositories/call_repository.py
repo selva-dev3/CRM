@@ -101,8 +101,8 @@ class CallRepository:
         self, db: AsyncSession, call_id: str, organization_id: str, access=None
     ) -> CallLog | None:
         query = select(CallLog).where(
-                CallLog.id == call_id,
-                CallLog.organization_id == organization_id,
+            CallLog.id == call_id,
+            CallLog.organization_id == organization_id,
         )
         access_filter = record_access_filter(
             access,
@@ -135,8 +135,8 @@ class CallRepository:
         self, db: AsyncSession, ids: builtins.list[str], organization_id: str, access=None
     ) -> builtins.list[CallLog]:
         query = select(CallLog).where(
-                CallLog.id.in_(ids),
-                CallLog.organization_id == organization_id,
+            CallLog.id.in_(ids),
+            CallLog.organization_id == organization_id,
         )
         access_filter = record_access_filter(
             access,

@@ -6,9 +6,10 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
+import jwt
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException, status
-from jose import JWTError, jwt
+from jwt import InvalidTokenError as JWTError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -136,22 +137,20 @@ class IntegrationService:
     @staticmethod
     def _status_dict(integration: Integration) -> dict:
         raw_status = (integration.status or "disconnected").lower()
-        sync_status = raw_status if raw_status in {"syncing", "synced", "sync_failed"} else "not_synced"
+        sync_status = (
+            raw_status if raw_status in {"syncing", "synced", "sync_failed"} else "not_synced"
+        )
         connection_status = (
             "disconnected"
             if not integration.is_connected
-            else "authenticated"
-            if raw_status == "authenticated"
-            else "connected"
+            else "authenticated" if raw_status == "authenticated" else "connected"
         )
         return {
             "name": integration.name,
             "is_connected": integration.is_connected,
             "connection_status": connection_status,
             "sync_status": sync_status,
-            "last_synced": integration.last_synced.isoformat()
-            if integration.last_synced
-            else None,
+            "last_synced": integration.last_synced.isoformat() if integration.last_synced else None,
             "last_error": integration.last_error,
         }
 
@@ -184,9 +183,9 @@ class IntegrationService:
                 "is_connected": integration.is_connected,
                 "webhook_url": None,
                 "events": events,
-                "last_synced": integration.last_synced.isoformat()
-                if integration.last_synced
-                else None,
+                "last_synced": (
+                    integration.last_synced.isoformat() if integration.last_synced else None
+                ),
             }
         except HTTPException:
             raise
@@ -270,7 +269,9 @@ class IntegrationService:
         try:
             payload = jwt.decode(state, settings.SECRET_KEY, algorithms=[ALGORITHM])
         except JWTError as exc:
-            raise APIException(status_code=400, message="OAuth state is invalid or expired.") from exc
+            raise APIException(
+                status_code=400, message="OAuth state is invalid or expired."
+            ) from exc
         if payload.get("purpose") != "integration_oauth" or payload.get("provider") != provider:
             raise APIException(status_code=400, message="OAuth state is invalid.")
         user_id = payload.get("sub")
@@ -308,9 +309,7 @@ class IntegrationService:
             "status": "pending",
         }
 
-    async def complete_oauth(
-        self, db: AsyncSession, provider: str, code: str, state: str
-    ) -> str:
+    async def complete_oauth(self, db: AsyncSession, provider: str, code: str, state: str) -> str:
         user_id, organization_id = self._decode_oauth_state(provider, state)
         user = await db.get(User, user_id)
         if user is None or user.organization_id != organization_id or not user.is_active:
@@ -334,12 +333,16 @@ class IntegrationService:
                 response.raise_for_status()
                 token_data = response.json()
         except (httpx.HTTPError, ValueError) as exc:
-            raise APIException(status_code=502, message=f"{provider.title()} OAuth exchange failed.") from exc
+            raise APIException(
+                status_code=502, message=f"{provider.title()} OAuth exchange failed."
+            ) from exc
         if provider == "slack" and not token_data.get("ok"):
             raise APIException(status_code=502, message="Slack OAuth exchange failed.")
         access_token = token_data.get("access_token")
         if not isinstance(access_token, str) or not access_token:
-            raise APIException(status_code=502, message=f"{provider.title()} returned no access token.")
+            raise APIException(
+                status_code=502, message=f"{provider.title()} returned no access token."
+            )
 
         provider_key = "slack_oauth" if provider == "slack" else provider
         integration = await self.repository.get_by_provider(db, organization_id, provider_key)
@@ -348,7 +351,11 @@ class IntegrationService:
                 db,
                 data={
                     "organization_id": organization_id,
-                    "name": {"google": "Google Calendar", "hubspot": "HubSpot Migration", "slack": "Slack Sync"}[provider],
+                    "name": {
+                        "google": "Google Calendar",
+                        "hubspot": "HubSpot Migration",
+                        "slack": "Slack Sync",
+                    }[provider],
                     "provider": provider_key,
                 },
             )
@@ -358,12 +365,15 @@ class IntegrationService:
         refresh_token = token_data.get("refresh_token")
         if isinstance(refresh_token, str) and refresh_token:
             integration.refresh_token = self._encrypt_secret(refresh_token)
-        integration.external_id = str(
-            token_data.get("hub_id")
-            or token_data.get("team", {}).get("id")
-            or token_data.get("user_id")
-            or ""
-        ) or None
+        integration.external_id = (
+            str(
+                token_data.get("hub_id")
+                or token_data.get("team", {}).get("id")
+                or token_data.get("user_id")
+                or ""
+            )
+            or None
+        )
         integration.last_error = None
         integration.last_synced = None
         await self.repository.commit(db)
@@ -452,9 +462,7 @@ class IntegrationService:
         except Exception as e:
             integration.last_error = f"Zapier delivery failed: {type(e).__name__}"
             await self.repository.commit(db)
-            raise APIException(
-                status_code=500, message="Failed to send Zapier test payload"
-            ) from e
+            raise APIException(status_code=500, message="Failed to send Zapier test payload") from e
 
     async def trigger_zapier_event(
         self,
@@ -555,9 +563,7 @@ class IntegrationService:
             ) from exc
         return {"message": "Zapier event queued for delivery.", "status": "queued"}
 
-    async def delete_zapier_integration(
-        self, db: AsyncSession, current_user: User | None
-    ) -> dict:
+    async def delete_zapier_integration(self, db: AsyncSession, current_user: User | None) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         try:
             res = await db.execute(
@@ -596,7 +602,9 @@ class IntegrationService:
                 response = await client.get(url, auth=("anystring", payload.api_key))
                 response.raise_for_status()
         except (httpx.HTTPError, ValueError) as exc:
-            raise APIException(status_code=502, message="Mailchimp credentials or audience are invalid.") from exc
+            raise APIException(
+                status_code=502, message="Mailchimp credentials or audience are invalid."
+            ) from exc
 
         integration = await self.repository.get_by_provider(db, org_id, "mailchimp")
         encrypted_config = self._encrypt_secret(
@@ -678,7 +686,7 @@ class IntegrationService:
         return {
             "name": integration.name,
             "is_connected": integration.is_connected,
-                "webhook_url": None,
+            "webhook_url": None,
             "events": events,
             "last_synced": integration.last_synced.isoformat() if integration.last_synced else None,
         }
@@ -807,9 +815,7 @@ class IntegrationService:
         except Exception as e:
             integration.last_error = f"Slack delivery failed: {type(e).__name__}"
             await self.repository.commit(db)
-            raise APIException(
-                status_code=500, message="Failed to send Slack test message"
-            ) from e
+            raise APIException(status_code=500, message="Failed to send Slack test message") from e
 
     @staticmethod
     def _build_slack_text(event_name: str, data: dict | None) -> str:
@@ -856,9 +862,7 @@ class IntegrationService:
         except Exception as e:
             integration.last_error = f"Slack delivery failed: {type(e).__name__}"
             await self._commit_last_error(db)
-            raise APIException(
-                status_code=500, message="Failed to send Slack event"
-            ) from e
+            raise APIException(status_code=500, message="Failed to send Slack event") from e
 
     async def _commit_last_error(self, db: AsyncSession) -> None:
         try:
@@ -987,9 +991,7 @@ class IntegrationService:
             return {"message": "Slack integration disconnected successfully.", "status": "success"}
         except Exception as e:
             await db.rollback()
-            raise APIException(
-                status_code=500, message="Failed to disconnect Slack"
-            ) from e
+            raise APIException(status_code=500, message="Failed to disconnect Slack") from e
 
     async def send_slack_notification(
         self, db: AsyncSession, payload: SlackNotifyPayload, current_user: User | None
@@ -1029,9 +1031,7 @@ class IntegrationService:
         except Exception as e:
             integration.last_error = f"Slack delivery failed: {type(e).__name__}"
             await self.repository.commit(db)
-            raise APIException(
-                status_code=500, message="Failed to send Slack notification"
-            ) from e
+            raise APIException(status_code=500, message="Failed to send Slack notification") from e
 
     # --- OAuth / misc ---
 
@@ -1069,9 +1069,7 @@ class IntegrationService:
         )
 
     # --- Generic by-name operations ---
-    async def get_integration_status(
-        self, db: AsyncSession, name: str, current_user: User
-    ) -> dict:
+    async def get_integration_status(self, db: AsyncSession, name: str, current_user: User) -> dict:
         org_id = await self.repository.resolve_org_id(db, current_user)
         i = await self.repository.get_by_name_like(db, org_id, name)
         if i:
@@ -1093,10 +1091,12 @@ class IntegrationService:
             message=f"Provider-specific connection is not implemented for '{name}'.",
         )
 
-    async def disconnect_integration(
-        self, db: AsyncSession, name: str, current_user: User
-    ) -> dict:
-        provider = {"google-calendar": "google", "hubspot": "hubspot", "slack-sync": "slack_oauth"}.get(name)
+    async def disconnect_integration(self, db: AsyncSession, name: str, current_user: User) -> dict:
+        provider = {
+            "google-calendar": "google",
+            "hubspot": "hubspot",
+            "slack-sync": "slack_oauth",
+        }.get(name)
         if provider is None:
             raise APIException(status_code=400, message=f"Unsupported integration '{name}'.")
         org_id = await self.repository.resolve_org_id(db, current_user)

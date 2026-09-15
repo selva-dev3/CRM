@@ -18,9 +18,7 @@ class Task(Base):
     description: Mapped[str | None] = mapped_column(Text)
     priority: Mapped[str] = mapped_column(String(50), default="Medium")
     status: Mapped[str] = mapped_column(String(50), default="Pending", index=True)
-    due_date: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     assigned_to: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
@@ -45,8 +43,8 @@ class Task(Base):
     ticket_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("tickets.id", ondelete="SET NULL"), index=True
     )
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )
 
@@ -58,11 +56,9 @@ class TaskComment(Base):
     task_id: Mapped[str] = mapped_column(
         String, ForeignKey("tasks.id", ondelete="CASCADE"), index=True
     )
-    user_id: Mapped[str | None] = mapped_column(
-        String, ForeignKey("users.id", ondelete="SET NULL")
-    )
+    user_id: Mapped[str | None] = mapped_column(String, ForeignKey("users.id", ondelete="SET NULL"))
     comment: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class TaskAttachment(Base):
@@ -74,7 +70,7 @@ class TaskAttachment(Base):
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_url: Mapped[str] = mapped_column(String(500), nullable=False)
-    uploaded_at: Mapped[DateTime] = mapped_column(
+    uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
@@ -96,6 +92,6 @@ class TaskDependency(Base):
     created_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL")
     )
-    created_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

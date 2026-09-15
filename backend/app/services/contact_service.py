@@ -722,7 +722,11 @@ class ContactService:
         return [contact_to_dict(c) for c in contacts]
 
     async def count_company_contacts(
-        self, db: AsyncSession, company_id: str, *, organization_id: str,
+        self,
+        db: AsyncSession,
+        company_id: str,
+        *,
+        organization_id: str,
         current_user: User | None = None,
     ) -> int:
         from app.services.record_access_service import record_access_service
@@ -733,7 +737,9 @@ class ContactService:
             else None
         )
         return await self.repository.count_by_company(
-            db, company_id, organization_id=organization_id,
+            db,
+            company_id,
+            organization_id=organization_id,
             **({"access": access} if access is not None else {}),
         )
 
@@ -754,9 +760,7 @@ class ContactService:
         from app.services.record_access_service import record_access_service
 
         access = (
-            await record_access_service.resolve(db, current_user, "deals")
-            if current_user
-            else None
+            await record_access_service.resolve(db, current_user, "deals") if current_user else None
         )
         deals = await self.deal_repository.list_by_contact(
             db,
@@ -769,7 +773,11 @@ class ContactService:
         return [deal_to_dict(deal) for deal in deals]
 
     async def count_contact_deals(
-        self, db: AsyncSession, contact_id: str, *, organization_id: str,
+        self,
+        db: AsyncSession,
+        contact_id: str,
+        *,
+        organization_id: str,
         current_user: User | None = None,
     ) -> int:
         await self.require_contact(
@@ -778,12 +786,12 @@ class ContactService:
         from app.services.record_access_service import record_access_service
 
         access = (
-            await record_access_service.resolve(db, current_user, "deals")
-            if current_user
-            else None
+            await record_access_service.resolve(db, current_user, "deals") if current_user else None
         )
         return await self.deal_repository.count_by_contact(
-            db, contact_id=contact_id, organization_id=organization_id,
+            db,
+            contact_id=contact_id,
+            organization_id=organization_id,
             **({"access": access} if access is not None else {}),
         )
 

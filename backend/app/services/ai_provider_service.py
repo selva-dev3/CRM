@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass, replace
 from time import monotonic
-from typing import TypeVar
+from typing import Any, TypeVar, cast
 
 import anthropic
 import httpx
@@ -743,14 +743,15 @@ class AIProviderGateway:
             )
         client = self._gemini_client()
         started = monotonic()
+        contents: list[str | genai_types.Part] = [
+            "Transcribe this audio. Include only timestamps and speaker labels that can "
+            "be determined from the audio; do not invent them.",
+            genai_types.Part.from_bytes(data=content, mime_type=content_type),
+        ]
         try:
             response = await client.aio.models.generate_content(
                 model=model,
-                contents=[
-                    "Transcribe this audio. Include only timestamps and speaker labels that can "
-                    "be determined from the audio; do not invent them.",
-                    genai_types.Part.from_bytes(data=content, mime_type=content_type),
-                ],
+                contents=cast(Any, contents),
                 config=genai_types.GenerateContentConfig(
                     temperature=0,
                     response_mime_type="application/json",
@@ -815,12 +816,11 @@ class AIProviderGateway:
         response = await client.messages.create(
             model=model,
             max_tokens=2048,
-            temperature=0.2,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
         )
         raw_text = "".join(
-            block.text for block in response.content if getattr(block, "type", None) == "text"
+            block.text for block in response.content if isinstance(block, anthropic.types.TextBlock)
         )
         return AIProviderResult(
             output=self._validate_output(raw_text, output_schema),

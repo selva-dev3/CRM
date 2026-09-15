@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -21,12 +22,10 @@ class DashboardLayout(Base):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    is_shared: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
+    is_shared: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     widgets: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
     filters: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )

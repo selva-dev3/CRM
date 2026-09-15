@@ -206,7 +206,7 @@ async def test_inbound_event_is_retained_while_organization_is_suspended(monkeyp
         id="message-stop", body="STOP", message_type="text", work_status="PENDING"
     )
     event.next_attempt_at = datetime.now(UTC)
-    repository.organization_active.return_value = True
+    repository.organization_active.return_value = True  # type: ignore[attr-defined]
     monkeypatch.setattr(
         repository, "persist_inbound", AsyncMock(return_value=(conversation, message))
     )
@@ -266,7 +266,7 @@ async def test_unsupported_inbound_message_is_persisted_for_handoff_without_medi
     monkeypatch.setattr(worker.service, "audit", MagicMock())
     monkeypatch.setattr(worker.service, "commit", AsyncMock())
 
-    queued_messages = []
+    queued_messages: list[tuple[str, str]] = []
     assert await worker.process_event(db, queued_messages=queued_messages) is True
 
     assert event.status == "DONE"
@@ -400,7 +400,7 @@ async def test_ai_outbound_replays_persisted_contact_context_plan(monkeypatch):
 
     assert await worker.process_message(_factory(claim_db, process_db)) is True
 
-    plan = context_answer.await_args.args[-1]
+    plan = context_answer.await_args.args[-1]  # type: ignore[union-attr]
     assert plan.topic == "combined"
     assert plan.sources == ["deal", "meeting"]
     provider.send_text.assert_awaited_once_with(
@@ -454,7 +454,7 @@ async def test_ai_outbound_falls_back_safely_when_persisted_plan_is_invalid(monk
 
     assert await worker.process_message(_factory(claim_db, process_db)) is True
 
-    fallback_plan = context_answer.await_args.args[-1]
+    fallback_plan = context_answer.await_args.args[-1]  # type: ignore[union-attr]
     assert fallback_plan.topic == "invoice"
     assert fallback_plan.limit == 3
     provider.send_text.assert_awaited_once_with(
@@ -542,11 +542,14 @@ async def test_provider_rate_limit_uses_retry_after_without_marking_message_fail
     monkeypatch.setattr(worker.service, "audit", MagicMock())
     monkeypatch.setattr(worker, "enforce_rate_limit", AsyncMock())
     started_at = datetime.now(UTC)
-    scheduled_messages = []
+    scheduled_messages: list[tuple[str, str, int]] = []
 
-    assert await worker.process_message(
-        _factory(claim_db, process_db), scheduled_messages=scheduled_messages
-    ) is True
+    assert (
+        await worker.process_message(
+            _factory(claim_db, process_db), scheduled_messages=scheduled_messages
+        )
+        is True
+    )
 
     assert message.work_status == "PENDING"
     assert message.status == "PENDING"
@@ -569,10 +572,13 @@ async def test_outbound_waits_without_consuming_retry_while_inbound_events_are_p
     monkeypatch.setattr(worker.service, "provider", provider)
     monkeypatch.setattr(worker.service, "commit", AsyncMock())
 
-    scheduled_messages = []
-    assert await worker.process_message(
-        _factory(claim_db, process_db), scheduled_messages=scheduled_messages
-    ) is True
+    scheduled_messages: list[tuple[str, str, int]] = []
+    assert (
+        await worker.process_message(
+            _factory(claim_db, process_db), scheduled_messages=scheduled_messages
+        )
+        is True
+    )
 
     provider.assert_not_awaited()
     assert message.work_status == "PENDING"

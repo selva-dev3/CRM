@@ -37,7 +37,9 @@ def acceptance_token(quote_id: str, delivery_id: str) -> str:
 
 
 class QuoteDeliveryService:
-    async def queue(self, db, *, quote_id: str, organization_id: str, recipient_email: str | None) -> dict:
+    async def queue(
+        self, db, *, quote_id: str, organization_id: str, recipient_email: str | None
+    ) -> dict:
         try:
             quote = await quote_repository.lock_scoped(
                 db, quote_id=quote_id, organization_id=organization_id
@@ -141,6 +143,7 @@ class QuoteDeliveryService:
                 await db.commit()
                 return False
             quote_id, org_id, delivery_id = quote.id, quote.organization_id, quote.delivery_id
+            recipient = quote.recipient_email
             logger.info(
                 "Quote delivery claimed organization_id=%s quote_id=%s delivery_id=%s",
                 org_id,
@@ -148,7 +151,15 @@ class QuoteDeliveryService:
                 delivery_id,
             )
             try:
-                if quote.status != "Approved" or not quote.approved_at or not quote.approved_by or not quote.expires_at or quote.expires_at <= now:
+                if (
+                    quote.status != "Approved"
+                    or not quote.approved_at
+                    or not quote.approved_by
+                    or not delivery_id
+                    or not recipient
+                    or not quote.expires_at
+                    or quote.expires_at <= now
+                ):
                     raise ValueError("Quote is no longer eligible for delivery")
                 organization = await quote_repository.get_organization(db, org_id)
                 company, contact = await DealRepository().get_sales_customer(
@@ -224,7 +235,6 @@ class QuoteDeliveryService:
 
         pdf_key = None
         message_id = None
-        recipient = quote.recipient_email
         email_subject = f"Quote {document['quote']['quote_number']}"
         email_body: str | None = None
         state = "Failed"

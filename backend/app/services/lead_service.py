@@ -49,7 +49,13 @@ EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 def _read_s3_object(key: str) -> bytes:
     s3_obj = s3_service.s3_client.get_object(Bucket=s3_service.bucket_name, Key=key)
-    return s3_obj["Body"].read()
+    read = getattr(s3_obj.get("Body"), "read", None)
+    if not callable(read):
+        raise APIException(message="Stored lead import is unavailable")
+    content = read()
+    if not isinstance(content, bytes):
+        raise APIException(message="Stored lead import is invalid")
+    return content
 
 
 def lead_to_dict(lead: Lead) -> dict:
@@ -378,9 +384,7 @@ class LeadService:
         from app.services.record_access_service import record_access_service
 
         access = await record_access_service.resolve(db, current_user, "leads")
-        lead = await self.repository.get_by_id_for_org(
-            db, lead_id, organization_id, access=access
-        )
+        lead = await self.repository.get_by_id_for_org(db, lead_id, organization_id, access=access)
         if not lead:
             raise NotFoundError(message=f"Lead '{lead_id}' not found")
         await ensure_fresh_record(db, lead, payload.expected_updated_at, "lead")
@@ -466,9 +470,7 @@ class LeadService:
                 organization_id=lead.organization_id,
                 module="leads",
                 trigger=(
-                    "record.status_changed"
-                    if previous_status != lead.status
-                    else "record.updated"
+                    "record.status_changed" if previous_status != lead.status else "record.updated"
                 ),
                 entity_id=lead.id,
                 actor_id=current_user.id,
@@ -558,9 +560,7 @@ class LeadService:
         if not ids:
             return {"affected_count": 0, "message": "No lead IDs provided"}
         access = (
-            await record_access_service.resolve(db, current_user, "leads")
-            if current_user
-            else None
+            await record_access_service.resolve(db, current_user, "leads") if current_user else None
         )
         leads = await self.repository.list_by_ids(
             db,
@@ -612,9 +612,7 @@ class LeadService:
             )
 
         access = (
-            await record_access_service.resolve(db, current_user, "leads")
-            if current_user
-            else None
+            await record_access_service.resolve(db, current_user, "leads") if current_user else None
         )
         leads = await self.repository.list_by_ids(
             db,
@@ -1189,7 +1187,7 @@ class LeadService:
                 "entity_type": "lead",
                 "entity_id": lead_id,
                 "content": note.content,
-                "created_by": users_map.get(note.created_by, "System User"),
+                "created_by": users_map.get(note.created_by or "", "System User"),
                 "created_at": str(note.created_at),
             }
             for note in notes

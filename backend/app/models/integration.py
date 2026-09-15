@@ -166,7 +166,9 @@ class IntegrationDelivery(Base):
     __tablename__ = "integration_deliveries"
     __table_args__ = (
         UniqueConstraint(
-            "organization_id", "integration_id", "idempotency_key",
+            "organization_id",
+            "integration_id",
+            "idempotency_key",
             name="uq_integration_delivery_idempotency",
         ),
     )

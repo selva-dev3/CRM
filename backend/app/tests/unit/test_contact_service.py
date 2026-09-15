@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+import typing
 from typing import Any
 from unittest.mock import ANY, AsyncMock
 
@@ -14,6 +14,13 @@ from app.repositories.contact_repository import ContactRepository
 from app.schemas.crm_schemas import ContactAddressUpdate, ContactCreate, ContactUpdate
 from app.services.contact_service import ContactService
 from app.services.integration_service import integration_service
+from app.tests.mock_helpers import (
+    as_async_mock,
+    as_mock,
+    loose_fixture,
+    replace_attr,
+    require_await,
+)
 
 
 def _make_contact(**overrides) -> Contact:
@@ -47,10 +54,10 @@ def _make_user(**overrides) -> User:
 
 def _service_with(repo: ContactRepository) -> ContactService:
     if "lock_organization" not in repo.__dict__:
-        repo.lock_organization = AsyncMock()
+        replace_attr(repo, "lock_organization", AsyncMock())
     if "find_duplicate" not in repo.__dict__:
-        repo.find_duplicate = AsyncMock(return_value=None)
-    whatsapp = SimpleNamespace(
+        replace_attr(repo, "find_duplicate", AsyncMock(return_value=None))
+    whatsapp = loose_fixture(
         lock_phone_guard=AsyncMock(),
         prepare_crm_phone=AsyncMock(),
         detach_crm_identities=AsyncMock(),
@@ -81,7 +88,7 @@ async def test_count_contacts_is_scoped_to_current_organization(monkeypatch):
     )
 
     assert result == 19
-    repo.count_by_org.assert_awaited_once_with(
+    as_async_mock(repo.count_by_org).assert_awaited_once_with(
         db,
         organization_id="org-1",
         search="Jane",
@@ -117,7 +124,7 @@ async def test_list_contacts_forwards_filters_with_organization_scope(monkeypatc
     )
 
     assert result[0]["id"] == "cnt-1"
-    repo.list_by_org.assert_awaited_once_with(
+    as_async_mock(repo.list_by_org).assert_awaited_once_with(
         db,
         organization_id="org-1",
         page=2,
@@ -157,7 +164,9 @@ async def test_get_billing_address_is_scoped_to_contact_and_organization():
 
     assert result.street == "123 Main Street"
     assert result.country == "IN"
-    repo.get_address.assert_awaited_once_with(db, contact_id="cnt-1", organization_id="org-1")
+    as_async_mock(repo.get_address).assert_awaited_once_with(
+        db, contact_id="cnt-1", organization_id="org-1"
+    )
 
 
 @pytest.mark.asyncio
@@ -180,7 +189,7 @@ async def test_update_billing_address_creates_missing_address():
 
     assert result.street == "123 Main Street"
     assert result.country == "IN"
-    repo.create_address.assert_awaited_once_with(
+    as_async_mock(repo.create_address).assert_awaited_once_with(
         db,
         contact_id="cnt-1",
         data={
@@ -198,14 +207,24 @@ async def test_list_contact_activities_combines_existing_related_records(monkeyp
     repo: Any = ContactRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
     service = _service_with(repo)
-    service.note_repository.list_by_entity = AsyncMock(
-        return_value=[SimpleNamespace(id="note-1", content="Followed up", created_at="2026-01-02")]
+    replace_attr(
+        service.note_repository,
+        "list_by_entity",
+        AsyncMock(
+            return_value=[
+                loose_fixture(id="note-1", content="Followed up", created_at="2026-01-02")
+            ]
+        ),
     )
-    service.call_repository.list_by_contact = AsyncMock(return_value=[])
-    service.deal_repository.list_activities_by_contact = AsyncMock(
-        return_value=[
-            SimpleNamespace(id="deal-activity-1", action="Deal won", timestamp="2026-01-01")
-        ]
+    replace_attr(service.call_repository, "list_by_contact", AsyncMock(return_value=[]))
+    replace_attr(
+        service.deal_repository,
+        "list_activities_by_contact",
+        AsyncMock(
+            return_value=[
+                loose_fixture(id="deal-activity-1", action="Deal won", timestamp="2026-01-01")
+            ]
+        ),
     )
     db = AsyncMock(spec=AsyncSession)
     monkeypatch.setattr(
@@ -224,7 +243,7 @@ async def test_list_contact_activities_combines_existing_related_records(monkeyp
 
     assert [item.type for item in result] == ["Note", "Deal Activity"]
     assert result[0].description == "Followed up"
-    service.note_repository.list_by_entity.assert_awaited_once_with(
+    as_async_mock(service.note_repository.list_by_entity).assert_awaited_once_with(
         db,
         entity_type="contact",
         entity_id="cnt-1",
@@ -232,7 +251,7 @@ async def test_list_contact_activities_combines_existing_related_records(monkeyp
         page=1,
         limit=15,
     )
-    service.call_repository.list_by_contact.assert_awaited_once_with(
+    as_async_mock(service.call_repository.list_by_contact).assert_awaited_once_with(
         db, contact_id="cnt-1", organization_id="org-1", page=1, limit=15
     )
 
@@ -242,18 +261,22 @@ async def test_list_contact_activities_omits_calls_without_effective_permission(
     repo: Any = ContactRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
     service = _service_with(repo)
-    service.note_repository.list_by_entity = AsyncMock(return_value=[])
-    service.call_repository.list_by_contact = AsyncMock(
-        return_value=[
-            SimpleNamespace(
-                id="call-1",
-                call_type="Outbound",
-                notes="Sensitive call notes",
-                timestamp="2026-01-02",
-            )
-        ]
+    replace_attr(service.note_repository, "list_by_entity", AsyncMock(return_value=[]))
+    replace_attr(
+        service.call_repository,
+        "list_by_contact",
+        AsyncMock(
+            return_value=[
+                loose_fixture(
+                    id="call-1",
+                    call_type="Outbound",
+                    notes="Sensitive call notes",
+                    timestamp="2026-01-02",
+                )
+            ]
+        ),
     )
-    service.deal_repository.list_activities_by_contact = AsyncMock(return_value=[])
+    replace_attr(service.deal_repository, "list_activities_by_contact", AsyncMock(return_value=[]))
     monkeypatch.setattr(
         "app.services.auth_service.auth_service.get_user_permissions",
         AsyncMock(return_value=["contacts:read", "calls:read"]),
@@ -269,7 +292,7 @@ async def test_list_contact_activities_omits_calls_without_effective_permission(
     )
 
     assert result == []
-    service.call_repository.list_by_contact.assert_not_awaited()
+    as_async_mock(service.call_repository.list_by_contact).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -277,17 +300,21 @@ async def test_list_contact_emails_matches_contact_recipient():
     repo: Any = ContactRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
     service = _service_with(repo)
-    service.email_repository.list_for_contact = AsyncMock(
-        return_value=[
-            SimpleNamespace(
-                id="email-1",
-                from_email="rep@example.com",
-                to_email="jane@acme.com",
-                subject="Follow-up",
-                body_text="Checking in",
-                sent_at="2026-01-02",
-            )
-        ]
+    replace_attr(
+        service.email_repository,
+        "list_for_contact",
+        AsyncMock(
+            return_value=[
+                loose_fixture(
+                    id="email-1",
+                    from_email="rep@example.com",
+                    to_email="jane@acme.com",
+                    subject="Follow-up",
+                    body_text="Checking in",
+                    sent_at="2026-01-02",
+                )
+            ]
+        ),
     )
     db = AsyncMock(spec=AsyncSession)
 
@@ -297,7 +324,7 @@ async def test_list_contact_emails_matches_contact_recipient():
 
     assert result[0].subject == "Follow-up"
     assert result[0].body == "Checking in"
-    service.email_repository.list_for_contact.assert_awaited_once_with(
+    as_async_mock(service.email_repository.list_for_contact).assert_awaited_once_with(
         db,
         organization_id="org-1",
         contact_id="cnt-1",
@@ -313,7 +340,7 @@ async def test_list_contact_emails_requires_limit_for_later_pages():
     repo: Any = ContactRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
     service = _service_with(repo)
-    service.email_repository.list_for_contact = AsyncMock()
+    replace_attr(service.email_repository, "list_for_contact", AsyncMock())
 
     with pytest.raises(APIException) as exc:
         await service.list_contact_emails(
@@ -321,12 +348,12 @@ async def test_list_contact_emails_requires_limit_for_later_pages():
             "cnt-1",
             organization_id="org-1",
             page=2,
-            limit=None,
+            limit=typing.cast(typing.Any, None),
             current_user=_make_user(),
         )
 
     assert exc.value.status_code == 422
-    service.email_repository.list_for_contact.assert_not_awaited()
+    as_async_mock(service.email_repository.list_for_contact).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -334,8 +361,10 @@ async def test_list_contact_deals_is_scoped_and_serialized():
     repo: Any = ContactRepository()
     repo.get_by_id_scoped = AsyncMock(return_value=_make_contact())
     service = _service_with(repo)
-    service.deal_repository.list_by_contact = AsyncMock(
-        return_value=[Deal(id="deal-1", organization_id="org-1", title="Renewal")]
+    replace_attr(
+        service.deal_repository,
+        "list_by_contact",
+        AsyncMock(return_value=[Deal(id="deal-1", organization_id="org-1", title="Renewal")]),
     )
     db = AsyncMock(spec=AsyncSession)
 
@@ -344,7 +373,7 @@ async def test_list_contact_deals_is_scoped_and_serialized():
     )
 
     assert result[0]["id"] == "deal-1"
-    service.deal_repository.list_by_contact.assert_awaited_once_with(
+    as_async_mock(service.deal_repository.list_by_contact).assert_awaited_once_with(
         db,
         contact_id="cnt-1",
         organization_id="org-1",
@@ -378,7 +407,7 @@ async def test_create_contact_resolves_org_and_serializes(monkeypatch):
     assert result["first_name"] == "Jane"
     assert result["last_name"] == "Doe"
     assert result["email"] == "jane@acme.com"
-    repo.create.assert_awaited_once()
+    as_async_mock(repo.create).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -389,11 +418,11 @@ async def test_create_contact_validates_and_persists_custom_fields(monkeypatch):
     repo.lock_organization = AsyncMock()
     repo.find_duplicate = AsyncMock(return_value=None)
     custom_fields = AsyncMock()
-    custom_fields.validate_values.return_value = {"preferred_channel": "Email"}
+    as_mock(custom_fields.validate_values).return_value = {"preferred_channel": "Email"}
     service = ContactService(
         repository=repo,
         custom_field_service_instance=custom_fields,
-        whatsapp_repository=SimpleNamespace(
+        whatsapp_repository=loose_fixture(
             lock_phone_guard=AsyncMock(),
             prepare_crm_phone=AsyncMock(),
             detach_crm_identities=AsyncMock(),
@@ -418,13 +447,15 @@ async def test_create_contact_validates_and_persists_custom_fields(monkeypatch):
         _make_user(),
     )
 
-    custom_fields.validate_values.assert_awaited_once_with(
+    as_async_mock(custom_fields.validate_values).assert_awaited_once_with(
         db,
         organization_id="org-1",
         entity_type="Contact",
         values={"preferred_channel": "Email"},
     )
-    assert repo.create.await_args.kwargs["data"]["custom_fields"] == {"preferred_channel": "Email"}
+    assert require_await(repo.create).kwargs["data"]["custom_fields"] == {
+        "preferred_channel": "Email"
+    }
     assert result["custom_fields"] == {"preferred_channel": "Email"}
 
 
@@ -436,7 +467,7 @@ async def test_create_contact_takes_phone_guard_before_organization_lock(monkeyp
     repo.create = AsyncMock(return_value=contact)
     repo.find_duplicate = AsyncMock(return_value=None)
     repo.lock_organization = AsyncMock(side_effect=lambda *_args: calls.append("organization"))
-    whatsapp = SimpleNamespace(
+    whatsapp = loose_fixture(
         lock_phone_guard=AsyncMock(side_effect=lambda *_args: calls.append("phone")),
         prepare_crm_phone=AsyncMock(),
         detach_crm_identities=AsyncMock(),
@@ -464,11 +495,11 @@ async def test_update_contact_takes_phone_guard_before_fresh_contact_read(monkey
     contact = _make_contact(phone="+14155552671")
     repo: Any = ContactRepository()
     repo.get_by_id_scoped = AsyncMock(
-        side_effect=lambda *_args, **_kwargs: (calls.append("read"), contact)[1]
+        side_effect=lambda *_args, **_kwargs: (calls.append("read"), contact)[1]  # type: ignore[func-returns-value]
     )
     repo.find_duplicate = AsyncMock(return_value=None)
     repo.lock_organization = AsyncMock(side_effect=lambda *_args: calls.append("organization"))
-    whatsapp = SimpleNamespace(
+    whatsapp = loose_fixture(
         lock_phone_guard=AsyncMock(side_effect=lambda *_args: calls.append("phone")),
         prepare_crm_phone=AsyncMock(side_effect=lambda *_args: calls.append("prepare")),
         detach_crm_identities=AsyncMock(),
@@ -485,7 +516,7 @@ async def test_update_contact_takes_phone_guard_before_fresh_contact_read(monkey
     )
 
     assert calls == ["phone", "read", "organization", "prepare"]
-    assert repo.get_by_id_scoped.await_args.kwargs["populate_existing"] is True
+    assert require_await(repo.get_by_id_scoped).kwargs["populate_existing"] is True
 
 
 @pytest.mark.asyncio
@@ -558,7 +589,7 @@ async def test_create_contact_defaults_name_from_email(monkeypatch):
     result = await service.create_contact(db, ContactCreate(email="jane@acme.com"), _make_user())
 
     assert result["email"] == "jane@acme.com"
-    repo.create.assert_awaited_once()
+    as_async_mock(repo.create).assert_awaited_once()
 
 
 @pytest.mark.asyncio

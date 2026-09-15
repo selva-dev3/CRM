@@ -22,7 +22,7 @@ from app.core.rbac_matrix import (
     APPROVED_PERMISSION_KEYS,
     validate_permission_keys,
 )
-from app.models import AuditLog, Role, User
+from app.models import AuditLog, Permission, Role, User
 from app.repositories.role_repository import RoleRepository
 from app.schemas.crm_schemas import PermissionCreate, RoleCreate, RoleUpdate
 from app.schemas.record_access import RECORD_SCOPE_MODULES, RoleRecordScopeUpdate
@@ -1001,7 +1001,7 @@ class RoleService:
 
     async def _validated_permissions(
         self, db: AsyncSession, values: list[str]
-    ) -> tuple[list[str], list]:
+    ) -> tuple[list[str], list[Permission]]:
         keys = validate_permission_keys(values)
         if not keys:
             return [], []
@@ -1152,7 +1152,7 @@ class RoleService:
             raise NotFoundError(message="Role not found")
         self._ensure_mutable_role_ownership(role, current_user)
         before = await self.get_record_scopes(db, role_id, current_user)
-        updates = {item.module: item.scope for item in payload.scopes}
+        updates: dict[str, str] = {item.module: item.scope for item in payload.scopes}
         final = [
             {
                 "module": item["module"],
@@ -1614,7 +1614,7 @@ class RoleService:
         self._ensure_mutable_role_ownership(r, current_user)
         try:
             permission_keys = None
-            permissions = []
+            permissions: list[Permission] = []
             if payload.permissions is not None:
                 permission_keys, permissions = await self._validated_permissions(
                     db, payload.permissions

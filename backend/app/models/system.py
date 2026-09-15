@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -27,7 +28,7 @@ class CustomField(Base):
     field_type: Mapped[str] = mapped_column(String(50), nullable=False, default="text")
     label: Mapped[str] = mapped_column(String(100), nullable=False)
     options: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SLAPolicy(Base):
@@ -41,7 +42,7 @@ class SLAPolicy(Base):
     response_time_hours: Mapped[int] = mapped_column(Integer, default=1)
     resolution_time_hours: Mapped[int] = mapped_column(Integer, default=24)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class FileUpload(Base):
@@ -52,7 +53,7 @@ class FileUpload(Base):
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     mime_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
-    uploaded_at: Mapped[DateTime] = mapped_column(
+    uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 

@@ -87,7 +87,7 @@ class EmailTemplate(Base):
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
     body_template: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str | None] = mapped_column(String(100), default="General")
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class EmailLog(Base):
@@ -99,4 +99,4 @@ class EmailLog(Base):
     )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)  # opened, clicked, bounced
     user_agent: Mapped[str | None] = mapped_column(Text)
-    timestamp: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

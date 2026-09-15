@@ -1,5 +1,6 @@
 import inspect
 import re
+import typing
 from pathlib import Path
 
 import pytest
@@ -58,8 +59,12 @@ def test_rbac_migration_catalog_matches_runtime_catalog() -> None:
         / "versions"
         / "u5e6f7a8b9c0_harden_rbac_integrity.py"
     )
-    whatsapp_migration = REPOSITORY_ROOT / "backend" / "alembic" / "versions" / "v6f7a8b9c0d1_whatsapp_channel.py"
-    sales_migration = REPOSITORY_ROOT / "backend" / "alembic" / "versions" / "p1r2o3j4s5f6_projects_sales_flow.py"
+    whatsapp_migration = (
+        REPOSITORY_ROOT / "backend" / "alembic" / "versions" / "v6f7a8b9c0d1_whatsapp_channel.py"
+    )
+    sales_migration = (
+        REPOSITORY_ROOT / "backend" / "alembic" / "versions" / "p1r2o3j4s5f6_projects_sales_flow.py"
+    )
     crm_migration = (
         REPOSITORY_ROOT
         / "backend"
@@ -67,12 +72,11 @@ def test_rbac_migration_catalog_matches_runtime_catalog() -> None:
         / "versions"
         / "c9d8e7f6a5b4_complete_crm_foundation.py"
     )
-    migration_keys = set(PERMISSION_PATTERN.findall(migration.read_text(encoding="utf-8"))) | set(
-        PERMISSION_PATTERN.findall(whatsapp_migration.read_text(encoding="utf-8"))
-    ) | set(
-        PERMISSION_PATTERN.findall(sales_migration.read_text(encoding="utf-8"))
-    ) | set(
-        PERMISSION_PATTERN.findall(crm_migration.read_text(encoding="utf-8"))
+    migration_keys = (
+        set(PERMISSION_PATTERN.findall(migration.read_text(encoding="utf-8")))
+        | set(PERMISSION_PATTERN.findall(whatsapp_migration.read_text(encoding="utf-8")))
+        | set(PERMISSION_PATTERN.findall(sales_migration.read_text(encoding="utf-8")))
+        | set(PERMISSION_PATTERN.findall(crm_migration.read_text(encoding="utf-8")))
     )
 
     assert migration_keys == set(APPROVED_PERMISSION_KEYS)
@@ -85,7 +89,9 @@ def _route_permissions(router, path: str, method: str) -> set[str]:
         if isinstance(item, APIRoute) and item.path == path and method in (item.methods or set())
     )
     return {
-        inspect.getclosurevars(dependency.dependency).nonlocals["permission"]
+        inspect.getclosurevars(
+            typing.cast(typing.Callable[..., typing.Any], dependency.dependency)
+        ).nonlocals["permission"]
         for dependency in route.dependencies
         if getattr(dependency.dependency, "__name__", "") == "permission_dependency"
     }

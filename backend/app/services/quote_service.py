@@ -494,7 +494,11 @@ class QuoteService:
         return [quote_to_dict(quote) for quote in quotes]
 
     async def count_quotes_for_deal(
-        self, db: AsyncSession, *, deal_id: str, organization_id: str,
+        self,
+        db: AsyncSession,
+        *,
+        deal_id: str,
+        organization_id: str,
         current_user: User | None = None,
     ) -> int:
         access = (
@@ -503,7 +507,9 @@ class QuoteService:
             else None
         )
         return await self.repository.count_by_deal(
-            db, deal_id=deal_id, organization_id=organization_id,
+            db,
+            deal_id=deal_id,
+            organization_id=organization_id,
             **({"access": access} if access is not None else {}),
         )
 

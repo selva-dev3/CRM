@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+import typing
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
@@ -22,6 +22,7 @@ from app.services.integration_service import (
     SLACK_ENABLED_EVENTS,
     IntegrationService,
 )
+from app.tests.mock_helpers import loose_fixture
 
 
 def _make_integration(**overrides) -> Integration:
@@ -50,7 +51,7 @@ async def test_list_integrations_falls_back_to_disconnected_defaults():
     service = IntegrationService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.list_integrations(db, SimpleNamespace(organization_id="org-1"))
+    result = await service.list_integrations(db, loose_fixture(organization_id="org-1"))
 
     assert len(result) == len(DEFAULT_CONNECTORS)
     assert result[0]["name"] == "Slack Sync"
@@ -65,7 +66,7 @@ async def test_list_integrations_does_not_hide_database_errors():
     db = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(RuntimeError, match="db down"):
-        await service.list_integrations(db, SimpleNamespace(organization_id="org-1"))
+        await service.list_integrations(db, loose_fixture(organization_id="org-1"))
 
 
 @pytest.mark.asyncio
@@ -102,14 +103,14 @@ async def test_trigger_zapier_event_queues_with_client_idempotency_key():
     repo.resolve_org_id = AsyncMock(return_value="org-1")
     repo.get_connected_by_provider = AsyncMock(return_value=integration)
     repo.get_delivery_by_idempotency_key = AsyncMock(return_value=None)
-    repo.queue_delivery = AsyncMock(return_value=SimpleNamespace(id="delivery-1"))
+    repo.queue_delivery = AsyncMock(return_value=loose_fixture(id="delivery-1"))
     repo.commit = AsyncMock()
     service = IntegrationService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.trigger_zapier_event(
         db,
-        SimpleNamespace(event_name="lead.created", payload={"lead_id": "lead-1"}),
+        loose_fixture(event_name="lead.created", payload={"lead_id": "lead-1"}),
         None,
         idempotency_key="request-1",
     )
@@ -129,7 +130,7 @@ async def test_trigger_zapier_event_reuses_existing_idempotent_delivery():
     repo.resolve_org_id = AsyncMock(return_value="org-1")
     repo.get_connected_by_provider = AsyncMock(return_value=integration)
     repo.get_delivery_by_idempotency_key = AsyncMock(
-        return_value=SimpleNamespace(
+        return_value=loose_fixture(
             id="delivery-1",
             event_name="lead.created",
             payload={"event": "lead.created", "data": {}},
@@ -142,7 +143,7 @@ async def test_trigger_zapier_event_reuses_existing_idempotent_delivery():
 
     result = await service.trigger_zapier_event(
         db,
-        SimpleNamespace(event_name="lead.created", payload={}),
+        loose_fixture(event_name="lead.created", payload={}),
         None,
         idempotency_key="request-1",
     )
@@ -161,14 +162,14 @@ async def test_trigger_zapier_event_recovers_concurrent_idempotency_conflict():
     repo.get_delivery_by_idempotency_key = AsyncMock(
         side_effect=[
             None,
-            SimpleNamespace(
+            loose_fixture(
                 id="delivery-1",
                 event_name="lead.created",
                 payload={"event": "lead.created", "data": {}},
             ),
         ]
     )
-    repo.queue_delivery = AsyncMock(return_value=SimpleNamespace(id="delivery-1"))
+    repo.queue_delivery = AsyncMock(return_value=loose_fixture(id="delivery-1"))
     repo.commit = AsyncMock(
         side_effect=IntegrityError("insert integration delivery", {}, Exception("duplicate"))
     )
@@ -177,7 +178,7 @@ async def test_trigger_zapier_event_recovers_concurrent_idempotency_conflict():
 
     result = await service.trigger_zapier_event(
         db,
-        SimpleNamespace(event_name="lead.created", payload={}),
+        loose_fixture(event_name="lead.created", payload={}),
         None,
         idempotency_key="request-1",
     )
@@ -193,7 +194,7 @@ async def test_trigger_zapier_event_rejects_idempotency_key_payload_mismatch():
     repo.resolve_org_id = AsyncMock(return_value="org-1")
     repo.get_connected_by_provider = AsyncMock(return_value=integration)
     repo.get_delivery_by_idempotency_key = AsyncMock(
-        return_value=SimpleNamespace(
+        return_value=loose_fixture(
             id="delivery-1",
             event_name="lead.created",
             payload={"event": "lead.created", "data": {"lead_id": "lead-1"}},
@@ -206,7 +207,7 @@ async def test_trigger_zapier_event_rejects_idempotency_key_payload_mismatch():
     with pytest.raises(APIException) as exc_info:
         await service.trigger_zapier_event(
             db,
-            SimpleNamespace(event_name="lead.created", payload={"lead_id": "lead-2"}),
+            loose_fixture(event_name="lead.created", payload={"lead_id": "lead-2"}),
             None,
             idempotency_key="request-1",
         )
@@ -222,7 +223,7 @@ async def test_trigger_zapier_event_queue_failure_is_not_success():
     repo.resolve_org_id = AsyncMock(return_value="org-1")
     repo.get_connected_by_provider = AsyncMock(return_value=integration)
     repo.get_delivery_by_idempotency_key = AsyncMock(return_value=None)
-    repo.queue_delivery = AsyncMock(return_value=SimpleNamespace(id="delivery-1"))
+    repo.queue_delivery = AsyncMock(return_value=loose_fixture(id="delivery-1"))
     repo.commit = AsyncMock(side_effect=RuntimeError("database unavailable"))
     service = IntegrationService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
@@ -230,7 +231,7 @@ async def test_trigger_zapier_event_queue_failure_is_not_success():
     with pytest.raises(APIException) as exc_info:
         await service.trigger_zapier_event(
             db,
-            SimpleNamespace(event_name="lead.created", payload={}),
+            loose_fixture(event_name="lead.created", payload={}),
             None,
             idempotency_key="request-1",
         )
@@ -278,12 +279,12 @@ async def test_connect_mailchimp_verifies_and_encrypts_credentials(monkeypatch):
             server_prefix="us7",
             audience_id="audience-1",
         ),
-        SimpleNamespace(organization_id="org-1"),
+        loose_fixture(organization_id="org-1"),
     )
 
     assert result["status"] == "success"
-    assert integration.credentials.startswith("enc:v1:")
-    assert "mailchimp-key" in service._decrypt_secret(integration.credentials)
+    assert integration.credentials.startswith("enc:v1:")  # type: ignore[union-attr]
+    assert "mailchimp-key" in service._decrypt_secret(integration.credentials)  # type: ignore[operator]
 
 
 @pytest.mark.asyncio
@@ -336,9 +337,7 @@ async def test_connect_slack_verifies_provider_before_marking_connected():
         db, SlackConnectRequest(webhook_url="https://hooks.slack.com/yyy"), None
     )
 
-    cast(Any, service)._verify_slack_webhook.assert_awaited_once_with(
-        "https://hooks.slack.com/yyy"
-    )
+    cast(Any, service)._verify_slack_webhook.assert_awaited_once_with("https://hooks.slack.com/yyy")
     assert repo.create.await_args.kwargs["data"]["status"] == "synced"
 
 
@@ -439,7 +438,7 @@ async def test_get_integration_status_fallback():
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.get_integration_status(
-        db, "stripe", SimpleNamespace(organization_id="org-1")
+        db, "stripe", loose_fixture(organization_id="org-1")
     )
 
     assert result["name"] == "Stripe"
@@ -462,15 +461,19 @@ async def test_connect_integration_creates_missing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_start_google_oauth_returns_signed_authorization_url(monkeypatch):
-    monkeypatch.setattr("app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_ID", "google-id")
-    monkeypatch.setattr("app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(
+        "app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_ID", "google-id"
+    )
+    monkeypatch.setattr(
+        "app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_SECRET", "google-secret"
+    )
     monkeypatch.setattr(
         "app.services.integration_service.settings.GOOGLE_CALENDAR_REDIRECT_URI",
         "https://crm.example.com/api/v1/integrations/google/callback",
     )
     service = IntegrationService()
     result = await service.start_oauth(
-        "google", SimpleNamespace(id="user-1", organization_id="org-1")
+        "google", loose_fixture(id="user-1", organization_id="org-1")
     )
 
     assert result["status"] == "pending"
@@ -480,13 +483,17 @@ async def test_start_google_oauth_returns_signed_authorization_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_complete_oauth_encrypts_tokens_and_scopes_organization(monkeypatch):
-    monkeypatch.setattr("app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_ID", "google-id")
-    monkeypatch.setattr("app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(
+        "app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_ID", "google-id"
+    )
+    monkeypatch.setattr(
+        "app.services.integration_service.settings.GOOGLE_OAUTH_CLIENT_SECRET", "google-secret"
+    )
     monkeypatch.setattr(
         "app.services.integration_service.settings.GOOGLE_CALENDAR_REDIRECT_URI",
         "https://crm.example.com/api/v1/integrations/google/callback",
     )
-    user = SimpleNamespace(id="user-1", organization_id="org-1", is_active=True)
+    user: typing.Any = loose_fixture(id="user-1", organization_id="org-1", is_active=True)
     integration = _make_integration(
         name="Google Calendar",
         provider="google",
@@ -518,8 +525,8 @@ async def test_complete_oauth_encrypts_tokens_and_scopes_organization(monkeypatc
 
     assert result == "google"
     assert integration.is_connected is True
-    assert integration.access_token.startswith("enc:v1:")
-    assert integration.refresh_token.startswith("enc:v1:")
+    assert integration.access_token.startswith("enc:v1:")  # type: ignore[union-attr]
+    assert integration.refresh_token.startswith("enc:v1:")  # type: ignore[union-attr]
     assert service._decrypt_secret(integration.access_token) == "access"
     assert service._decrypt_secret(integration.refresh_token) == "refresh"
     assert integration.organization_id == "org-1"
@@ -528,12 +535,10 @@ async def test_complete_oauth_encrypts_tokens_and_scopes_organization(monkeypatc
 @pytest.mark.asyncio
 async def test_complete_oauth_rejects_state_from_another_organization():
     service = IntegrationService()
-    state = service._oauth_state(
-        "hubspot", SimpleNamespace(id="user-1", organization_id="org-1")
-    )
+    state = service._oauth_state("hubspot", loose_fixture(id="user-1", organization_id="org-1"))
     db = AsyncMock(spec=AsyncSession)
     db.get = AsyncMock(
-        return_value=SimpleNamespace(id="user-1", organization_id="org-2", is_active=True)
+        return_value=loose_fixture(id="user-1", organization_id="org-2", is_active=True)
     )
 
     with pytest.raises(APIException) as exc_info:
@@ -664,7 +669,7 @@ async def test_connect_slack_reconnects_updates_existing_integration():
     )
 
     assert result["status"] == "success"
-    assert integration.webhook_url.startswith("enc:v1:")
+    assert integration.webhook_url.startswith("enc:v1:")  # type: ignore[union-attr]
     assert integration.is_connected is True
     repo.create.assert_not_awaited()
 

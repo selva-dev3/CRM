@@ -244,8 +244,8 @@ class InvoiceRepository:
         self, db: AsyncSession, *, deal_id: str, organization_id: str, access=None
     ) -> Invoice | None:
         conditions = [
-                Invoice.deal_id == deal_id,
-                Invoice.organization_id == organization_id,
+            Invoice.deal_id == deal_id,
+            Invoice.organization_id == organization_id,
         ]
         access_filter = record_access_filter(
             access, assigned_column=Invoice.created_by, created_column=Invoice.created_by

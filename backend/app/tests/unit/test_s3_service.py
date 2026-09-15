@@ -24,22 +24,22 @@ def _s3_error(code: str, status_code: str) -> S3Error:
 
 def test_ensure_bucket_exists_marks_existing_bucket_verified():
     service = _service()
-    service.minio_client.bucket_exists.return_value = True
+    service.minio_client.bucket_exists.return_value = True  # type: ignore[attr-defined]
 
     service._ensure_bucket_exists()
 
-    service.minio_client.bucket_exists.assert_called_once_with(service.bucket_name)
-    service.minio_client.make_bucket.assert_not_called()
+    service.minio_client.bucket_exists.assert_called_once_with(service.bucket_name)  # type: ignore[attr-defined]
+    service.minio_client.make_bucket.assert_not_called()  # type: ignore[attr-defined]
     assert service._bucket_verified is True
 
 
 def test_ensure_bucket_exists_creates_missing_bucket():
     service = _service()
-    service.minio_client.bucket_exists.return_value = False
+    service.minio_client.bucket_exists.return_value = False  # type: ignore[attr-defined]
 
     service._ensure_bucket_exists()
 
-    service.minio_client.make_bucket.assert_called_once_with(
+    service.minio_client.make_bucket.assert_called_once_with(  # type: ignore[attr-defined]
         service.bucket_name, location=service.region
     )
     assert service._bucket_verified is True
@@ -57,13 +57,13 @@ def test_ensure_bucket_exists_creates_missing_bucket():
 )
 def test_ensure_bucket_exists_does_not_create_after_storage_errors(error: Exception):
     service = _service()
-    service.minio_client.bucket_exists.side_effect = error
+    service.minio_client.bucket_exists.side_effect = error  # type: ignore[attr-defined]
 
     with pytest.raises(type(error)) as exc_info:
         service._ensure_bucket_exists()
 
     assert exc_info.value is error
-    service.minio_client.make_bucket.assert_not_called()
+    service.minio_client.make_bucket.assert_not_called()  # type: ignore[attr-defined]
     assert service._bucket_verified is False
 
 
@@ -74,15 +74,15 @@ def test_upload_file_uses_minio_put_object():
     result = service.upload_file(stream, "documents/test.txt", "text/plain")
 
     assert result == "documents/test.txt"
-    service.minio_client.put_object.assert_called_once_with(
+    service.minio_client.put_object.assert_called_once_with(  # type: ignore[attr-defined]
         service.bucket_name,
         "documents/test.txt",
         stream,
         8,
         content_type="text/plain",
     )
-    service.minio_client.bucket_exists.assert_not_called()
-    service.minio_client.stat_object.assert_not_called()
+    service.minio_client.bucket_exists.assert_not_called()  # type: ignore[attr-defined]
+    service.minio_client.stat_object.assert_not_called()  # type: ignore[attr-defined]
 
 
 def test_upload_file_preserves_default_content_type():
@@ -92,19 +92,19 @@ def test_upload_file_preserves_default_content_type():
     result = service.upload_file(stream, "documents/test.bin")
 
     assert result == "documents/test.bin"
-    assert service.minio_client.put_object.call_args.kwargs["content_type"] == (
+    assert service.minio_client.put_object.call_args.kwargs["content_type"] == (  # type: ignore[attr-defined]
         "application/octet-stream"
     )
 
 
 def test_upload_file_does_not_require_object_metadata_permission():
     service = _service()
-    service.minio_client.stat_object.side_effect = RuntimeError("object unavailable")
+    service.minio_client.stat_object.side_effect = RuntimeError("object unavailable")  # type: ignore[attr-defined]
 
     result = service.upload_file(BytesIO(b"document"), "documents/test.txt", "text/plain")
 
     assert result == "documents/test.txt"
-    service.minio_client.stat_object.assert_not_called()
+    service.minio_client.stat_object.assert_not_called()  # type: ignore[attr-defined]
 
 
 @pytest.mark.parametrize(
@@ -116,7 +116,7 @@ def test_upload_file_does_not_require_object_metadata_permission():
 )
 def test_upload_file_wraps_minio_errors(error: Exception):
     service = _service()
-    service.minio_client.put_object.side_effect = error
+    service.minio_client.put_object.side_effect = error  # type: ignore[attr-defined]
 
     with pytest.raises(RuntimeError, match="Failed to upload object documents/test.txt"):
         service.upload_file(BytesIO(b"document"), "documents/test.txt", "text/plain")
@@ -124,12 +124,12 @@ def test_upload_file_wraps_minio_errors(error: Exception):
 
 def test_generate_presigned_url_uses_minio_presigned_get_object():
     service = _service()
-    service.minio_client.presigned_get_object.return_value = "https://s3.example/signed"
+    service.minio_client.presigned_get_object.return_value = "https://s3.example/signed"  # type: ignore[attr-defined]
 
     result = service.generate_presigned_url("documents/test.txt", expiration_seconds=120)
 
     assert result == "https://s3.example/signed"
-    call = service.minio_client.presigned_get_object.call_args
+    call = service.minio_client.presigned_get_object.call_args  # type: ignore[attr-defined]
     assert call.args[:2] == (service.bucket_name, "documents/test.txt")
     assert call.kwargs["expires"].total_seconds() == 120
 
@@ -140,6 +140,6 @@ def test_delete_file_uses_minio_remove_object():
     result = service.delete_file("documents/test.txt")
 
     assert result is True
-    service.minio_client.remove_object.assert_called_once_with(
+    service.minio_client.remove_object.assert_called_once_with(  # type: ignore[attr-defined]
         service.bucket_name, "documents/test.txt"
     )

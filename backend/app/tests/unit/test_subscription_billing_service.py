@@ -10,6 +10,7 @@ from app.models import Organization, OrganizationSubscription, SubscriptionPlan,
 from app.repositories.organization_repository import OrganizationRepository
 from app.services.subscription_billing_service import SubscriptionBillingService
 from app.services.subscription_stripe_provider import SubscriptionStripeProvider
+from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr
 
 
 @pytest.mark.asyncio
@@ -34,7 +35,7 @@ async def test_missing_tenant_cannot_reach_provider_or_repository(method):
 @pytest.mark.asyncio
 async def test_unknown_plan_is_not_coerced_to_enterprise():
     repository = AsyncMock(spec=OrganizationRepository)
-    repository.get_plan_by_slug.return_value = None
+    as_mock(repository.get_plan_by_slug).return_value = None
     provider = AsyncMock(spec=SubscriptionStripeProvider)
     service = SubscriptionBillingService(repository=repository, provider=provider)
     db = AsyncMock(spec=AsyncSession)
@@ -47,15 +48,15 @@ async def test_unknown_plan_is_not_coerced_to_enterprise():
             idempotency_key="key",
         )
     assert exc.value.code == "UNKNOWN_PLAN"
-    repository.get_by_id_for_update.assert_not_awaited()
+    as_async_mock(repository.get_by_id_for_update).assert_not_awaited()
     assert not provider.mock_calls
-    db.rollback.assert_awaited_once()
+    as_async_mock(db.rollback).assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_duplicate_subscription_rows_fail_before_provider_access():
     repository = AsyncMock(spec=OrganizationRepository)
-    repository.get_plan_by_slug.return_value = SubscriptionPlan(
+    as_mock(repository.get_plan_by_slug).return_value = SubscriptionPlan(
         id="plan-professional",
         name="Professional",
         slug="professional",
@@ -67,7 +68,7 @@ async def test_duplicate_subscription_rows_fail_before_provider_access():
         ai_credits=5000,
         is_active=True,
     )
-    repository.get_by_id_for_update.return_value = Organization(id="org", is_active=True)
+    as_mock(repository.get_by_id_for_update).return_value = Organization(id="org", is_active=True)
     repository.get_subscription.side_effect = MultipleResultsFound()
     provider = AsyncMock(spec=SubscriptionStripeProvider)
     db = AsyncMock(spec=AsyncSession)
@@ -83,7 +84,7 @@ async def test_duplicate_subscription_rows_fail_before_provider_access():
 
     assert exc.value.code == "SUBSCRIPTION_DATA_INTEGRITY_ERROR"
     assert not provider.mock_calls
-    db.rollback.assert_awaited_once()
+    as_async_mock(db.rollback).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -128,10 +129,10 @@ async def test_reconciliation_marks_provider_cancelled_subscription_without_recr
         status="active",
         reconciliation_required=True,
     )
-    repository.get_by_id_for_update.return_value = organization
-    repository.get_subscription.return_value = subscription
+    as_mock(repository.get_by_id_for_update).return_value = organization
+    as_mock(repository.get_subscription).return_value = subscription
     provider = AsyncMock(spec=SubscriptionStripeProvider)
-    provider.retrieve_subscription.return_value = {
+    as_mock(provider.retrieve_subscription).return_value = {
         "id": "sub_existing",
         "customer": "cus_existing",
         "status": "canceled",
@@ -139,8 +140,8 @@ async def test_reconciliation_marks_provider_cancelled_subscription_without_recr
         "items": {"data": [{"price": {"id": "price"}}]},
     }
     service = SubscriptionBillingService(repository=repository, provider=provider)
-    service._validate_remote_identity = Mock()
-    service._paid_plan = AsyncMock(return_value=None)
+    replace_attr(service, "_validate_remote_identity", Mock())
+    replace_attr(service, "_paid_plan", AsyncMock(return_value=None))
     db = AsyncMock(spec=AsyncSession)
 
     changed = await service.reconcile_subscription(db, organization_id="org")
@@ -149,9 +150,9 @@ async def test_reconciliation_marks_provider_cancelled_subscription_without_recr
     assert subscription.status == "cancelled"
     assert subscription.auto_renew is False
     assert subscription.reconciliation_required is False
-    provider.create_customer.assert_not_awaited()
-    provider.create_checkout.assert_not_awaited()
-    db.commit.assert_awaited_once()
+    as_async_mock(provider.create_customer).assert_not_awaited()
+    as_async_mock(provider.create_checkout).assert_not_awaited()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -165,8 +166,8 @@ async def test_reconciliation_marks_unexpected_provider_failure_for_recovery():
         customer_id="cus_existing",
         status="active",
     )
-    repository.get_by_id_for_update.return_value = organization
-    repository.get_subscription.return_value = subscription
+    as_mock(repository.get_by_id_for_update).return_value = organization
+    as_mock(repository.get_subscription).return_value = subscription
     provider = AsyncMock(spec=SubscriptionStripeProvider)
     provider.retrieve_subscription.side_effect = RuntimeError("provider unavailable")
     service = SubscriptionBillingService(repository=repository, provider=provider)
@@ -177,8 +178,8 @@ async def test_reconciliation_marks_unexpected_provider_failure_for_recovery():
 
     assert subscription.reconciliation_required is True
     assert subscription.last_provider_error_code == "SUBSCRIPTION_RECONCILIATION_FAILED"
-    db.rollback.assert_awaited_once()
-    db.commit.assert_awaited_once()
+    as_async_mock(db.rollback).assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -192,8 +193,8 @@ async def test_reconciliation_preserves_provider_error_when_failure_marker_canno
         customer_id="cus_existing",
         status="active",
     )
-    repository.get_by_id_for_update.return_value = organization
-    repository.get_subscription.return_value = subscription
+    as_mock(repository.get_by_id_for_update).return_value = organization
+    as_mock(repository.get_subscription).return_value = subscription
     provider = AsyncMock(spec=SubscriptionStripeProvider)
     provider.retrieve_subscription.side_effect = APIException(
         message="Provider subscription is unavailable",
@@ -224,7 +225,7 @@ async def test_bad_signature_cannot_consume_webhook_event():
         )
     assert exc.value.status_code == 400
     assert not repository.mock_calls
-    db.commit.assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -239,7 +240,7 @@ async def test_bad_signature_cannot_consume_webhook_event():
 async def test_non_subscription_events_do_not_mutate_billing(kind, obj):
     repository = AsyncMock(spec=OrganizationRepository)
     provider = AsyncMock(spec=SubscriptionStripeProvider)
-    provider.construct_event.return_value = {
+    as_mock(provider.construct_event).return_value = {
         "id": "evt_unrelated",
         "type": kind,
         "data": {"object": obj},
@@ -250,4 +251,4 @@ async def test_non_subscription_events_do_not_mutate_billing(kind, obj):
     ).handle_webhook(db, payload_bytes=b"fake-event", sig_header="fake-signature")
     assert result["status"] == "success"
     assert not repository.mock_calls
-    db.commit.assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()

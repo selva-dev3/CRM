@@ -60,9 +60,7 @@ class AIRepository:
         filters = [Lead.id == lead_id, Lead.organization_id == organization_id]
         if access_filter is not None:
             filters.append(access_filter)
-        result = await db.execute(
-            select(Lead).where(*filters)
-        )
+        result = await db.execute(select(Lead).where(*filters))
         return result.scalars().first()
 
     async def list_leads(
@@ -80,10 +78,7 @@ class AIRepository:
         if access_filter is not None:
             filters.append(access_filter)
         result = await db.execute(
-            select(Lead)
-            .where(*filters)
-            .order_by(Lead.created_at.desc())
-            .limit(limit)
+            select(Lead).where(*filters).order_by(Lead.created_at.desc()).limit(limit)
         )
         return result.scalars().all()
 
@@ -101,9 +96,7 @@ class AIRepository:
         filters = [Deal.id == deal_id, Deal.organization_id == organization_id]
         if access_filter is not None:
             filters.append(access_filter)
-        result = await db.execute(
-            select(Deal).where(*filters)
-        )
+        result = await db.execute(select(Deal).where(*filters))
         return result.scalars().first()
 
     async def get_company(
@@ -120,9 +113,7 @@ class AIRepository:
         filters = [Company.id == company_id, Company.organization_id == organization_id]
         if access_filter is not None:
             filters.append(access_filter)
-        result = await db.execute(
-            select(Company).where(*filters)
-        )
+        result = await db.execute(select(Company).where(*filters))
         return result.scalars().first()
 
     async def get_contact(
@@ -139,9 +130,7 @@ class AIRepository:
         filters = [Contact.id == contact_id, Contact.organization_id == organization_id]
         if access_filter is not None:
             filters.append(access_filter)
-        result = await db.execute(
-            select(Contact).where(*filters)
-        )
+        result = await db.execute(select(Contact).where(*filters))
         return result.scalars().first()
 
     async def get_deal_signals(
@@ -245,9 +234,7 @@ class AIRepository:
         filters = [Meeting.id == meeting_id, Meeting.organization_id == organization_id]
         if access_filter is not None:
             filters.append(access_filter)
-        result = await db.execute(
-            select(Meeting).where(*filters)
-        )
+        result = await db.execute(select(Meeting).where(*filters))
         return result.scalars().first()
 
     async def get_call(
@@ -264,9 +251,7 @@ class AIRepository:
         filters = [CallLog.id == call_id, CallLog.organization_id == organization_id]
         if access_filter is not None:
             filters.append(access_filter)
-        result = await db.execute(
-            select(CallLog).where(*filters)
-        )
+        result = await db.execute(select(CallLog).where(*filters))
         return result.scalars().first()
 
     async def get_user(
@@ -319,9 +304,7 @@ class AIRepository:
         if activity_filter is not None:
             activity_conditions.append(activity_filter)
         activity_count = (
-            await db.execute(
-                select(func.count(ActivityLog.id)).where(*activity_conditions)
-            )
+            await db.execute(select(func.count(ActivityLog.id)).where(*activity_conditions))
         ).scalar_one()
         return {
             "deal_count": int(total),
@@ -379,7 +362,7 @@ class AIRepository:
         limit: int = 500,
         access: RecordAccessContext | None = None,
     ) -> Sequence[Lead | Contact | Company]:
-        model = {"lead": Lead, "contact": Contact, "company": Company}[entity_type]
+        model: Any = {"lead": Lead, "contact": Contact, "company": Company}[entity_type]
         assigned, created = {
             "lead": (Lead.assigned_to, Lead.created_by),
             "contact": (Contact.owner_id, Contact.created_by),
@@ -391,9 +374,7 @@ class AIRepository:
         filters = [model.organization_id == organization_id]
         if access_filter is not None:
             filters.append(access_filter)
-        result = await db.execute(
-            select(model).where(*filters).limit(limit)
-        )
+        result = await db.execute(select(model).where(*filters).limit(limit))
         return result.scalars().all()
 
     async def get_customer_context(
@@ -409,6 +390,8 @@ class AIRepository:
         deal_access: RecordAccessContext | None = None,
         call_access: RecordAccessContext | None = None,
     ) -> dict[str, object] | None:
+        entity: Company | Contact | None
+        company_id: str | None
         if entity_type == "company":
             entity = await self.get_company(
                 db,
@@ -451,10 +434,7 @@ class AIRepository:
             deals = (
                 (
                     await db.execute(
-                        select(Deal)
-                        .where(*deal_filters)
-                        .order_by(Deal.updated_at.desc())
-                        .limit(20)
+                        select(Deal).where(*deal_filters).order_by(Deal.updated_at.desc()).limit(20)
                     )
                 )
                 .scalars()
@@ -697,7 +677,9 @@ class AIRepository:
         source_conditions = []
         if allow_unlinked:
             source_conditions.append(
-                and_(AITranscript.source_type.is_(None), AITranscript.user_id == call_access.user_id)
+                and_(
+                    AITranscript.source_type.is_(None), AITranscript.user_id == call_access.user_id
+                )
                 if call_access is not None
                 else AITranscript.source_type.is_(None)
             )
@@ -964,6 +946,7 @@ class AIRepository:
     ) -> dict[str, list[dict[str, object]]]:
         pattern = f"%{query.strip()}%"
         context: dict[str, list[dict[str, object]]] = {}
+        result: Any
 
         if "leads" in allowed_modules:
             result = await db.execute(

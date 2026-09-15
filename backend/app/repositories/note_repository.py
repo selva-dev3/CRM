@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import builtins
+from collections.abc import Mapping
+from typing import Any
 
 from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.record_access import RecordAccessContext, record_access_filter
 from app.models import Company, Contact, Deal, Lead, User
@@ -249,7 +252,9 @@ class NoteRepository:
         return stmt.where(access_filter) if access_filter is not None else stmt
 
     @staticmethod
-    def _target_access_filter(target_access: dict[str, RecordAccessContext] | None):
+    def _target_access_filter(
+        target_access: Mapping[str, RecordAccessContext | None] | None,
+    ):
         if target_access is None:
             return None
         specs = (
@@ -258,7 +263,7 @@ class NoteRepository:
             ("companies", Note.company_id, Company.owner_id, Company.created_by),
             ("deals", Note.deal_id, Deal.assigned_to, Deal.created_by),
         )
-        clauses = []
+        clauses: builtins.list[ColumnElement[bool]] = []
         for module, note_fk, assigned, created in specs:
             target_filter = record_access_filter(
                 target_access[module], assigned_column=assigned, created_column=created
@@ -266,9 +271,12 @@ class NoteRepository:
             if target_filter is None:
                 clauses.append(note_fk.is_not(None))
             else:
-                model = {"leads": Lead, "contacts": Contact, "companies": Company, "deals": Deal}[
-                    module
-                ]
+                model: Any = {
+                    "leads": Lead,
+                    "contacts": Contact,
+                    "companies": Company,
+                    "deals": Deal,
+                }[module]
                 clauses.append(
                     and_(
                         note_fk.is_not(None),
@@ -279,7 +287,9 @@ class NoteRepository:
 
     @classmethod
     def _apply_target_access(
-        cls, stmt, target_access: dict[str, RecordAccessContext] | None
+        cls,
+        stmt,
+        target_access: Mapping[str, RecordAccessContext | None] | None,
     ):
         target_filter = cls._target_access_filter(target_access)
         return stmt.where(target_filter) if target_filter is not None else stmt

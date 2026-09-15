@@ -2,8 +2,10 @@ import asyncio
 import html
 import io
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, delete, or_, select, update
+from sqlalchemy.engine import CursorResult
 
 from app.core.logging import get_logger
 from app.workers.celery_app import celery_app
@@ -54,7 +56,7 @@ async def _cleanup_expired_auth_records() -> dict[str, int]:
                     (PasswordReset.expires_at <= now) | PasswordReset.is_used.is_(True),
                 ),
             ):
-                result = await db.execute(model.__table__.delete().where(predicate))
+                result = cast(CursorResult[Any], await db.execute(delete(model).where(predicate)))
                 counts[name] = result.rowcount or 0
             await db.commit()
             return counts
@@ -81,6 +83,25 @@ async def _cleanup_deleted_organization_files() -> int:
     try:
         async with async_sessionmaker(engine, expire_on_commit=False)() as db:
             return await cleanup_organization_files(db)
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.workers.tasks.reconcile_object_storage", ignore_result=True)
+def reconcile_object_storage():
+    return asyncio.run(_reconcile_object_storage())
+
+
+async def _reconcile_object_storage() -> dict[str, int]:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.services.storage_reconciliation_service import reconcile_all_organizations
+
+    engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+            return await reconcile_all_organizations(db)
     finally:
         await engine.dispose()
 

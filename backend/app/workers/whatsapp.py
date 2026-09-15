@@ -226,9 +226,7 @@ async def process_message(
             Message.next_attempt_at <= datetime.now(UTC),
         ]
         if message_id is not None:
-            filters.extend(
-                (Message.id == message_id, Message.organization_id == organization_id)
-            )
+            filters.extend((Message.id == message_id, Message.organization_id == organization_id))
         message = (
             await db.execute(
                 select(Message)
@@ -608,9 +606,7 @@ async def process_message(
                 message.next_attempt_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
                 await service.commit(db)
                 if scheduled_messages is not None:
-                    scheduled_messages.append(
-                        (message.id, organization_id, max(1, delay_seconds))
-                    )
+                    scheduled_messages.append((message.id, organization_id, max(1, delay_seconds)))
                 logger.warning(
                     "whatsapp.message_retry_scheduled",
                     extra={"request_id": message.id, "error_code": exc.code},

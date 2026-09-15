@@ -1,7 +1,7 @@
 """Conversion transaction and tenant-boundary regression tests."""
 
+import typing
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -17,6 +17,7 @@ from app.models.lead import LeadActivity
 from app.repositories.lead_repository import LeadRepository
 from app.schemas.crm_schemas import LeadConvertRequest
 from app.services.lead_service import LeadService
+from app.tests.mock_helpers import loose_fixture
 
 
 def conversion_fixture():
@@ -39,7 +40,7 @@ def conversion_fixture():
         await LeadRepository().save_conversion(*args, **kwargs)
 
     repository.save_conversion = AsyncMock(side_effect=save)
-    user = SimpleNamespace(id="user", organization_id="org")
+    user: typing.Any = loose_fixture(id="user", organization_id="org")
     return db, lead, repository, user
 
 
@@ -153,7 +154,7 @@ async def test_conversion_preserves_owner_and_creates_missing_contact_address(mo
     )
     assert created_deal.assigned_to == "lead-owner"
     create_address.assert_awaited_once()
-    assert create_address.await_args.kwargs["data"] == {
+    assert create_address.await_args.kwargs["data"] == {  # type: ignore[union-attr]
         "street": "10 Market Street",
         "city": "Chennai",
         "state": "Tamil Nadu",
@@ -181,7 +182,7 @@ async def test_conversion_resolves_contact_phone_before_linking_identity(monkeyp
     async def link_identity(*_args):
         calls.append("link")
 
-    whatsapp = SimpleNamespace(
+    whatsapp = loose_fixture(
         lock_phone_guard=AsyncMock(side_effect=lock_phone_guard),
         prepare_crm_phone=AsyncMock(side_effect=prepare_phone),
         link_converted_lead=AsyncMock(side_effect=link_identity),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import builtins
+
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +16,9 @@ class PriceBookRepository:
             select(Organization.currency).where(Organization.id == organization_id)
         )
 
-    async def list(self, db: AsyncSession, *, organization_id: str) -> list[tuple[PriceBook, int]]:
+    async def list(
+        self, db: AsyncSession, *, organization_id: str
+    ) -> builtins.list[tuple[PriceBook, int]]:
         result = await db.execute(
             select(PriceBook, func.count(PriceBookEntry.id))
             .outerjoin(PriceBookEntry, PriceBookEntry.price_book_id == PriceBook.id)
@@ -22,7 +26,7 @@ class PriceBookRepository:
             .group_by(PriceBook.id)
             .order_by(PriceBook.is_default.desc(), PriceBook.name.asc())
         )
-        return list(result.all())
+        return builtins.list(result.tuples().all())
 
     async def get(
         self, db: AsyncSession, *, price_book_id: str, organization_id: str
@@ -43,7 +47,7 @@ class PriceBookRepository:
 
     async def list_entries(
         self, db: AsyncSession, *, price_book_id: str, organization_id: str
-    ) -> list[tuple[PriceBookEntry, Product]]:
+    ) -> builtins.list[tuple[PriceBookEntry, Product]]:
         result = await db.execute(
             select(PriceBookEntry, Product)
             .join(Product, Product.id == PriceBookEntry.product_id)
@@ -55,7 +59,7 @@ class PriceBookRepository:
             )
             .order_by(Product.name.asc())
         )
-        return list(result.all())
+        return builtins.list(result.tuples().all())
 
     async def get_product(
         self, db: AsyncSession, *, product_id: str, organization_id: str

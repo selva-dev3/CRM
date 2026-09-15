@@ -252,9 +252,7 @@ async def test_list_members_displays_authoritative_mapped_role():
     repo.get_by_id = AsyncMock(return_value=_make_org())
     repo.list_members = AsyncMock(return_value=[member])
     user_repo: Any = UserRepository()
-    user_repo.effective_role_names_for_users = AsyncMock(
-        return_value={member.id: "Admin"}
-    )
+    user_repo.effective_role_names_for_users = AsyncMock(return_value={member.id: "Admin"})
     service = OrganizationDomainService(repository=repo, user_repository=user_repo)
 
     result = await service.list_members(AsyncMock(spec=AsyncSession), _actor())
@@ -351,9 +349,7 @@ async def test_domain_listing_never_fabricates_dns_verification():
     repo.get_by_id = AsyncMock(return_value=org)
     service = _service_with(repo)
 
-    result = await service.list_organization_domains(
-        AsyncMock(spec=AsyncSession), _actor()
-    )
+    result = await service.list_organization_domains(AsyncMock(spec=AsyncSession), _actor())
 
     assert result == [
         {
@@ -397,9 +393,7 @@ async def test_audit_log_does_not_fabricate_actor_or_ip_address():
     )
     service = _service_with(repo)
 
-    result = await service.get_organization_audit_logs(
-        AsyncMock(spec=AsyncSession), _actor()
-    )
+    result = await service.get_organization_audit_logs(AsyncMock(spec=AsyncSession), _actor())
 
     assert result[0]["actor"] == "Unknown"
     assert result[0]["ip"] is None

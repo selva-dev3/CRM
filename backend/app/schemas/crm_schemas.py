@@ -361,6 +361,7 @@ class OrganizationUpdate(BaseModel):
     @classmethod
     def trim_organization_name(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
+
     slug: str | None = None
     email: str | None = None
     phone: str | None = None

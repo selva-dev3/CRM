@@ -293,7 +293,11 @@ async def get_contact_deals(
 ):
     organization_id = await organization_service.resolve_valid_org_id(db, current_user)
     deals = await contact_service.list_contact_deals(
-        db, contact_id, organization_id=organization_id, page=page, limit=limit,
+        db,
+        contact_id,
+        organization_id=organization_id,
+        page=page,
+        limit=limit,
         current_user=current_user,
     )
     total = await contact_service.count_contact_deals(

@@ -55,8 +55,22 @@ class ActivityRepository:
 
         links = (
             ("leads", Lead, Lead.id, lead_id_column, Lead.assigned_to, Lead.created_by),
-            ("contacts", Contact, Contact.id, contact_id_column, Contact.owner_id, Contact.created_by),
-            ("companies", Company, Company.id, company_id_column, Company.owner_id, Company.created_by),
+            (
+                "contacts",
+                Contact,
+                Contact.id,
+                contact_id_column,
+                Contact.owner_id,
+                Contact.created_by,
+            ),
+            (
+                "companies",
+                Company,
+                Company.id,
+                company_id_column,
+                Company.owner_id,
+                Company.created_by,
+            ),
             ("deals", Deal, Deal.id, deal_id_column, Deal.assigned_to, Deal.created_by),
         )
         predicates = []

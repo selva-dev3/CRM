@@ -2,8 +2,10 @@ import base64
 import hashlib
 import hmac
 import json
+import typing
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -17,6 +19,7 @@ from app.core.errors import APIException, ConflictError, ForbiddenError
 from app.schemas.whatsapp import IntegrationWrite, WebhookIngestResult
 from app.services.whatsapp_provider_service import WhatsAppProviderService, matches_media_sha256
 from app.services.whatsapp_service import WhatsAppService
+from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr
 
 TEST_APP_SECRET = "unit-test-app-secret"  # noqa: S105 - synthetic test credential
 TEST_VERIFY_TOKEN = "unit-test-verify-token"  # noqa: S105 - synthetic test credential
@@ -32,7 +35,7 @@ def account_correction(monkeypatch):
         lambda value: "enc:v1:synthetic",
     )
     service = WhatsAppService()
-    config = SimpleNamespace(
+    config: typing.Any = SimpleNamespace(
         id="config-a",
         organization_id="org-a",
         business_account_id="1001",
@@ -52,15 +55,19 @@ def account_correction(monkeypatch):
         catalog_integration_id="catalog-a",
         updated_at=None,
     )
-    service.permissions = AsyncMock(return_value={"integrations:manage"})
-    service.repository.configuration = AsyncMock(return_value=config)
-    service.repository.has_account_records = AsyncMock(return_value=False)
-    service.repository.catalog = AsyncMock(
-        return_value=SimpleNamespace(access_token="enc:v1:old", updated_at=None)  # noqa: S106
+    replace_attr(service, "permissions", AsyncMock(return_value={"integrations:manage"}))
+    replace_attr(service.repository, "configuration", AsyncMock(return_value=config))
+    replace_attr(service.repository, "has_account_records", AsyncMock(return_value=False))
+    replace_attr(
+        service.repository,
+        "catalog",
+        AsyncMock(
+            return_value=SimpleNamespace(access_token="enc:v1:old", updated_at=None)  # noqa: S106
+        ),
     )
-    service.audit = MagicMock()
-    service.status = AsyncMock(return_value="status-result")
-    user = SimpleNamespace(id="admin-a", organization_id="org-a")
+    replace_attr(service, "audit", MagicMock())
+    replace_attr(service, "status", AsyncMock(return_value="status-result"))
+    user: typing.Any = SimpleNamespace(id="admin-a", organization_id="org-a")
     payload = IntegrationWrite(
         business_account_id="1002",
         phone_number_id="2002",
@@ -90,9 +97,9 @@ async def test_unused_account_identity_can_be_corrected(account_correction, chan
     assert config.phone_backfill_stage == "contacts"
     assert config.phone_backfill_cursor is None
     assert config.enabled is False
-    service.repository.configuration.assert_awaited_once_with(db, "org-a", lock=True)
-    service.repository.has_account_records.assert_awaited_once_with(db, config)
-    db.commit.assert_awaited_once()
+    as_async_mock(service.repository.configuration).assert_awaited_once_with(db, "org-a", lock=True)
+    as_async_mock(service.repository.has_account_records).assert_awaited_once_with(db, config)
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -102,7 +109,7 @@ async def test_unused_account_identity_can_be_corrected(account_correction, chan
 async def test_used_account_identity_cannot_be_corrected(account_correction, blocker):
     service, config, user, payload = account_correction
     if blocker == "records":
-        service.repository.has_account_records.return_value = True
+        as_mock(service.repository.has_account_records).return_value = True
     else:
         setattr(config, blocker, True if blocker == "enabled" else datetime.now(UTC))
     db = AsyncMock()
@@ -110,8 +117,8 @@ async def test_used_account_identity_cannot_be_corrected(account_correction, blo
         await service.configure(db, user, payload)
     assert config.business_account_id == "1001"
     assert config.phone_number_id == "2001"
-    service.repository.catalog.assert_not_awaited()
-    db.commit.assert_not_awaited()
+    as_async_mock(service.repository.catalog).assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -119,12 +126,12 @@ async def test_same_account_can_refresh_credentials_with_history(account_correct
     service, config, user, payload = account_correction
     payload.business_account_id = config.business_account_id
     payload.phone_number_id = config.phone_number_id
-    service.repository.has_account_records.return_value = True
+    as_mock(service.repository.has_account_records).return_value = True
     db = AsyncMock()
     await service.configure(db, user, payload)
-    service.repository.has_account_records.assert_not_awaited()
+    as_async_mock(service.repository.has_account_records).assert_not_awaited()
     assert config.phone_index_ready is True
-    db.commit.assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -134,8 +141,8 @@ async def test_account_correction_commit_failure_propagates(account_correction):
     db.commit.side_effect = RuntimeError("synthetic commit failure")
     with pytest.raises(RuntimeError, match="synthetic commit failure"):
         await service.configure(db, user, payload)
-    db.rollback.assert_awaited_once()
-    service.status.assert_not_awaited()
+    as_async_mock(db.rollback).assert_awaited_once()
+    as_async_mock(service.status).assert_not_awaited()
 
 
 class _ConstraintError(Exception):
@@ -157,7 +164,7 @@ async def test_phone_number_collision_is_reported_as_conflict(account_correction
 
     assert exc_info.value.code == "WHATSAPP_PHONE_ALREADY_CONNECTED"
     assert exc_info.value.status_code == 409
-    db.rollback.assert_awaited_once()
+    as_async_mock(db.rollback).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -171,7 +178,7 @@ async def test_unexpected_integrity_error_is_not_hidden(account_correction):
         await service.configure(db, user, payload)
 
     assert exc_info.value is failure
-    db.rollback.assert_awaited_once()
+    as_async_mock(db.rollback).assert_awaited_once()
 
 
 def test_media_integrity_accepts_meta_base64_and_hex_encodings():
@@ -280,7 +287,7 @@ async def test_webhook_signature_is_checked_before_persistence(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_provider_acceptance_returns_real_provider_id_without_delivery_claim(monkeypatch):
-    captured = {}
+    captured: dict[str, Any] = {}
 
     class Response:
         status_code = 200
@@ -363,13 +370,11 @@ async def test_provider_rate_limit_is_safe_to_retry_after_requested_delay(monkey
 async def test_connection_verification_requires_current_app_waba_subscription(monkeypatch):
     monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
     monkeypatch.setattr(settings, "WHATSAPP_APP_ID", "3003")
-    monkeypatch.setattr(
-        "app.services.whatsapp_service.enforce_rate_limit", AsyncMock()
-    )
+    monkeypatch.setattr("app.services.whatsapp_service.enforce_rate_limit", AsyncMock())
     service = WhatsAppService()
-    user = SimpleNamespace(id="admin-a", organization_id="org-a", is_active=True)
+    user: typing.Any = SimpleNamespace(id="admin-a", organization_id="org-a", is_active=True)
     assignee = SimpleNamespace(id="agent-a", organization_id="org-a", is_active=True)
-    config = SimpleNamespace(
+    config: typing.Any = SimpleNamespace(
         id="config-a",
         organization_id="org-a",
         business_account_id="1001",
@@ -399,13 +404,15 @@ async def test_connection_verification_requires_current_app_waba_subscription(mo
             {"data": [{"whatsapp_business_api_data": {"id": "another-app"}}]},
         ]
     )
-    service.permissions = AsyncMock(
-        side_effect=[{"integrations:manage"}, {"whatsapp:read_assigned"}]
+    replace_attr(
+        service,
+        "permissions",
+        AsyncMock(side_effect=[{"integrations:manage"}, {"whatsapp:read_assigned"}]),
     )
-    service.repository.configuration = AsyncMock(return_value=config)
-    service.repository.catalog = AsyncMock(return_value=catalog)
-    service.repository.user = AsyncMock(return_value=assignee)
-    service.provider = AsyncMock(return_value=client)
+    replace_attr(service.repository, "configuration", AsyncMock(return_value=config))
+    replace_attr(service.repository, "catalog", AsyncMock(return_value=catalog))
+    replace_attr(service.repository, "user", AsyncMock(return_value=assignee))
+    replace_attr(service, "provider", AsyncMock(return_value=client))
 
     with pytest.raises(ConflictError) as exc_info:
         await service.verify(AsyncMock(), user)
@@ -418,13 +425,11 @@ async def test_connection_verification_requires_current_app_waba_subscription(mo
 async def test_connection_verification_accepts_meta_test_display_number(monkeypatch):
     monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
     monkeypatch.setattr(settings, "WHATSAPP_APP_ID", "3003")
-    monkeypatch.setattr(
-        "app.services.whatsapp_service.enforce_rate_limit", AsyncMock()
-    )
+    monkeypatch.setattr("app.services.whatsapp_service.enforce_rate_limit", AsyncMock())
     service = WhatsAppService()
-    user = SimpleNamespace(id="admin-a", organization_id="org-a", is_active=True)
+    user: typing.Any = SimpleNamespace(id="admin-a", organization_id="org-a", is_active=True)
     assignee = SimpleNamespace(id="agent-a", organization_id="org-a", is_active=True)
-    config = SimpleNamespace(
+    config: typing.Any = SimpleNamespace(
         id="config-a",
         organization_id="org-a",
         business_account_id="1001",
@@ -460,17 +465,19 @@ async def test_connection_verification_accepts_meta_test_display_number(monkeypa
         ]
     )
     expected = SimpleNamespace(verified=True)
-    service.permissions = AsyncMock(
-        side_effect=[{"integrations:manage"}, {"whatsapp:read_assigned"}]
+    replace_attr(
+        service,
+        "permissions",
+        AsyncMock(side_effect=[{"integrations:manage"}, {"whatsapp:read_assigned"}]),
     )
-    service.repository.configuration = AsyncMock(return_value=config)
-    service.repository.catalog = AsyncMock(return_value=catalog)
-    service.repository.user = AsyncMock(return_value=assignee)
-    service.provider = AsyncMock(return_value=client)
-    service.lock_account_revision = AsyncMock(return_value=(config, catalog))
-    service.audit = MagicMock()
-    service.commit = AsyncMock()
-    service.status = AsyncMock(return_value=expected)
+    replace_attr(service.repository, "configuration", AsyncMock(return_value=config))
+    replace_attr(service.repository, "catalog", AsyncMock(return_value=catalog))
+    replace_attr(service.repository, "user", AsyncMock(return_value=assignee))
+    replace_attr(service, "provider", AsyncMock(return_value=client))
+    replace_attr(service, "lock_account_revision", AsyncMock(return_value=(config, catalog)))
+    replace_attr(service, "audit", MagicMock())
+    replace_attr(service, "commit", AsyncMock())
+    replace_attr(service, "status", AsyncMock(return_value=expected))
 
     result = await service.verify(AsyncMock(), user)
 
@@ -480,7 +487,7 @@ async def test_connection_verification_accepts_meta_test_display_number(monkeypa
     assert config.enabled is True
     assert catalog.status == "connected"
     assert catalog.is_connected is True
-    service.commit.assert_awaited_once()
+    as_async_mock(service.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -497,9 +504,11 @@ async def test_status_reports_runtime_readiness_without_exposing_full_phone(monk
         AsyncMock(return_value=["ai:generate", "whatsapp:send", "whatsapp:read_all"]),
     )
     service = WhatsAppService()
-    current_user = SimpleNamespace(id="admin-a", organization_id="org-a", is_active=True)
+    current_user: typing.Any = SimpleNamespace(
+        id="admin-a", organization_id="org-a", is_active=True
+    )
     ai_user = SimpleNamespace(id="ai-a", organization_id="org-a", is_active=True)
-    config = SimpleNamespace(
+    config: typing.Any = SimpleNamespace(
         organization_id="org-a",
         enabled=True,
         phone_index_ready=True,
@@ -515,11 +524,11 @@ async def test_status_reports_runtime_readiness_without_exposing_full_phone(monk
         default_assignee_id="agent-a",
     )
     catalog = SimpleNamespace(status="connected")
-    service.permissions = AsyncMock(return_value={"integrations:read"})
-    service.repository.configuration = AsyncMock(return_value=config)
-    service.repository.catalog = AsyncMock(return_value=catalog)
-    service.repository.user = AsyncMock(return_value=ai_user)
-    service.repository.oldest_pending_at = AsyncMock(return_value=None)
+    replace_attr(service, "permissions", AsyncMock(return_value={"integrations:read"}))
+    replace_attr(service.repository, "configuration", AsyncMock(return_value=config))
+    replace_attr(service.repository, "catalog", AsyncMock(return_value=catalog))
+    replace_attr(service.repository, "user", AsyncMock(return_value=ai_user))
+    replace_attr(service.repository, "oldest_pending_at", AsyncMock(return_value=None))
     monkeypatch.setattr(
         "app.services.ai_runtime_service.ai_runtime_service.configuration_readiness",
         AsyncMock(return_value="READY"),
@@ -534,7 +543,7 @@ async def test_status_reports_runtime_readiness_without_exposing_full_phone(monk
     assert result.ai_status == "READY"
     from datetime import timedelta
 
-    service.repository.oldest_pending_at.return_value = now - timedelta(minutes=10)
+    as_mock(service.repository.oldest_pending_at).return_value = now - timedelta(minutes=10)
     delayed = await service.status(AsyncMock(), current_user)
     assert delayed.ready is False
     assert delayed.backlog_age_seconds >= 600
@@ -550,9 +559,10 @@ async def test_status_reports_runtime_readiness_without_exposing_full_phone(monk
 @pytest.mark.asyncio
 async def test_manual_retry_allows_deterministic_failure_but_rejects_unknown_outcome(monkeypatch):
     from app.models.whatsapp import WhatsAppMessage
+
     monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
     service = WhatsAppService()
-    user = SimpleNamespace(id="agent-a", organization_id="org-a", is_active=True)
+    user: typing.Any = SimpleNamespace(id="agent-a", organization_id="org-a", is_active=True)
     conversation = SimpleNamespace(id="conversation-a")
     message = WhatsAppMessage(
         id="message-a",
@@ -566,18 +576,16 @@ async def test_manual_retry_allows_deterministic_failure_but_rejects_unknown_out
         claimed_at=datetime.now(UTC),
         failed_at=datetime.now(UTC),
     )
-    config = SimpleNamespace(enabled=True)
-    identity = SimpleNamespace(consent="UNKNOWN")
-    service.conversation = AsyncMock(return_value=conversation)
-    service.repository.message = AsyncMock(return_value=message)
-    service.repository.configuration = AsyncMock(return_value=config)
-    service.repository.identity = AsyncMock(return_value=identity)
-    service.audit = MagicMock()
-    service.commit = AsyncMock()
+    config: typing.Any = SimpleNamespace(enabled=True)
+    identity: typing.Any = SimpleNamespace(consent="UNKNOWN")
+    replace_attr(service, "conversation", AsyncMock(return_value=conversation))
+    replace_attr(service.repository, "message", AsyncMock(return_value=message))
+    replace_attr(service.repository, "configuration", AsyncMock(return_value=config))
+    replace_attr(service.repository, "identity", AsyncMock(return_value=identity))
+    replace_attr(service, "audit", MagicMock())
+    replace_attr(service, "commit", AsyncMock())
 
-    result = await service.retry_failed_message(
-        AsyncMock(), user, conversation.id, message.id
-    )
+    result = await service.retry_failed_message(AsyncMock(), user, conversation.id, message.id)
 
     assert result is message
     assert message.status == "PENDING"
@@ -597,7 +605,7 @@ async def test_manual_retry_allows_deterministic_failure_but_rejects_unknown_out
 async def test_template_sync_fetches_all_pages_before_replacing_snapshot(monkeypatch):
     monkeypatch.setattr(settings, "WHATSAPP_ENABLED", True)
     service = WhatsAppService()
-    config = SimpleNamespace(
+    config: typing.Any = SimpleNamespace(
         id="config-a",
         organization_id="org-a",
         enabled=True,
@@ -610,7 +618,7 @@ async def test_template_sync_fetches_all_pages_before_replacing_snapshot(monkeyp
         updated_at=None,
     )
     catalog = SimpleNamespace(access_token="enc:v1:token", updated_at=None)  # noqa: S106
-    user = SimpleNamespace(id="user-a", organization_id="org-a", is_active=True)
+    user: typing.Any = SimpleNamespace(id="user-a", organization_id="org-a", is_active=True)
     client = MagicMock()
     client.request = AsyncMock(
         side_effect=[
@@ -621,21 +629,21 @@ async def test_template_sync_fetches_all_pages_before_replacing_snapshot(monkeyp
             {"data": [{"id": "template-2"}]},
         ]
     )
-    service.permissions = AsyncMock(return_value={"integrations:manage"})
-    service.provider = AsyncMock(return_value=client)
-    service.repository.configuration = AsyncMock(return_value=config)
-    service.repository.catalog = AsyncMock(return_value=catalog)
-    service.repository.replace_templates = AsyncMock()
-    service.repository.templates = AsyncMock(return_value=[])
-    service.audit = MagicMock()
-    service.commit = AsyncMock()
+    replace_attr(service, "permissions", AsyncMock(return_value={"integrations:manage"}))
+    replace_attr(service, "provider", AsyncMock(return_value=client))
+    replace_attr(service.repository, "configuration", AsyncMock(return_value=config))
+    replace_attr(service.repository, "catalog", AsyncMock(return_value=catalog))
+    replace_attr(service.repository, "replace_templates", AsyncMock())
+    replace_attr(service.repository, "templates", AsyncMock(return_value=[]))
+    replace_attr(service, "audit", MagicMock())
+    replace_attr(service, "commit", AsyncMock())
 
     db = AsyncMock()
     assert await service.sync_templates(db, user) == []
 
-    assert client.request.await_count == 2
-    assert client.request.await_args_list[1].kwargs["params"]["after"] == "cursor-2"
-    service.repository.replace_templates.assert_awaited_once_with(
+    assert as_async_mock(client.request).await_count == 2
+    assert as_async_mock(client.request).await_args_list[1].kwargs["params"]["after"] == "cursor-2"
+    as_async_mock(service.repository.replace_templates).assert_awaited_once_with(
         db,
         config,
         [{"id": "template-1"}, {"id": "template-2"}],
@@ -667,7 +675,7 @@ async def test_provider_result_is_rejected_after_account_correction(monkeypatch,
     corrected.enabled = False
     corrected.updated_at = datetime(2026, 1, 2, tzinfo=UTC)
     catalog = SimpleNamespace(access_token="enc:v1:token", updated_at=None)  # noqa: S106
-    user = SimpleNamespace(id="admin-a", organization_id="org-a", is_active=True)
+    user: typing.Any = SimpleNamespace(id="admin-a", organization_id="org-a", is_active=True)
     assignee = SimpleNamespace(id="agent-a", organization_id="org-a", is_active=True)
     client = MagicMock()
     if operation == "verify":
@@ -685,26 +693,32 @@ async def test_provider_result_is_rejected_after_account_correction(monkeypatch,
                 {"data": [{"id": "3003"}]},
             ]
         )
-        service.repository.user = AsyncMock(return_value=assignee)
-        service.permissions = AsyncMock(
-            side_effect=[{"integrations:manage"}, {"whatsapp:read_assigned"}]
+        replace_attr(service.repository, "user", AsyncMock(return_value=assignee))
+        replace_attr(
+            service,
+            "permissions",
+            AsyncMock(side_effect=[{"integrations:manage"}, {"whatsapp:read_assigned"}]),
         )
     else:
         client.request = AsyncMock(return_value={"data": [{"id": "old-template"}]})
-        service.permissions = AsyncMock(return_value={"integrations:manage"})
-        service.repository.templates = AsyncMock(return_value=[])
-    service.provider = AsyncMock(return_value=client)
-    service.repository.configuration = AsyncMock(side_effect=[original, corrected])
-    service.repository.catalog = AsyncMock(return_value=catalog)
-    service.repository.replace_templates = AsyncMock()
-    service.audit = MagicMock()
-    service.commit = AsyncMock()
+        replace_attr(service, "permissions", AsyncMock(return_value={"integrations:manage"}))
+        replace_attr(service.repository, "templates", AsyncMock(return_value=[]))
+    replace_attr(service, "provider", AsyncMock(return_value=client))
+    replace_attr(
+        service.repository,
+        "configuration",
+        AsyncMock(side_effect=[original, corrected]),
+    )
+    replace_attr(service.repository, "catalog", AsyncMock(return_value=catalog))
+    replace_attr(service.repository, "replace_templates", AsyncMock())
+    replace_attr(service, "audit", MagicMock())
+    replace_attr(service, "commit", AsyncMock())
     db = AsyncMock()
 
     with pytest.raises(ConflictError) as exc_info:
         await getattr(service, operation)(db, user)
 
     assert exc_info.value.code == "WHATSAPP_CONFIGURATION_CHANGED"
-    db.rollback.assert_awaited_once()
-    service.repository.replace_templates.assert_not_awaited()
-    service.commit.assert_not_awaited()
+    as_async_mock(db.rollback).assert_awaited_once()
+    as_async_mock(service.repository.replace_templates).assert_not_awaited()
+    as_async_mock(service.commit).assert_not_awaited()

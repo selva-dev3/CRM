@@ -3,7 +3,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from difflib import SequenceMatcher
 from time import monotonic
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from fastapi import status
 from pydantic import BaseModel
@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
 from app.core.rbac_matrix import RECORD_SCOPE_MODULES
+from app.core.record_access import RecordAccessContext
 from app.models import User
 from app.repositories.ai_repository import AIRepository
 from app.schemas.ai import (
@@ -591,7 +592,7 @@ class AIDomainService:
     @classmethod
     async def _related_record_access(
         cls, db: AsyncSession, current_user: User, plan: CRMSearchPlan
-    ) -> dict[str, object]:
+    ) -> dict[str, RecordAccessContext | None]:
         fields = set(plan.include_fields or [])
         fields.update(str(item.field) for item in plan.filters or [])
         fields.update(field for field in (plan.sort_by, plan.group_by) if field)
@@ -602,9 +603,7 @@ class AIDomainService:
         entities = {
             related_entity
             for field in fields
-            for related_entity in cls._RELATED_FIELD_ENTITIES.get(
-                (plan.entity_type, field), ()
-            )
+            for related_entity in cls._RELATED_FIELD_ENTITIES.get((plan.entity_type, field), ())
         }
         if plan.entity_type == "note":
             entities.update({"lead", "contact", "company", "deal"})
@@ -773,7 +772,7 @@ class AIDomainService:
 
     @classmethod
     def _search_catalog(cls, permissions: set[str]) -> dict[str, dict[str, object]]:
-        catalog = {
+        catalog: dict[str, dict[str, object]] = {
             entity: {
                 "fields": sorted(
                     field
@@ -868,19 +867,18 @@ class AIDomainService:
             f"Task instructions:\n{instructions}\n\n"
             f"Authorized CRM context:\n{json.dumps(context, default=str, ensure_ascii=False)}"
         )
-        runtime_kwargs = {
-            "current_user": current_user,
-            "feature": feature,
-            "system_prompt": self._system_prompt(feature),
-            "user_prompt": prompt,
-            "output_schema": output_schema,
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "web_search": web_search,
-        }
-        if provider_override:
-            runtime_kwargs["provider_override"] = provider_override
-        output, run = await self.runtime.execute(db, **runtime_kwargs)
+        output, run = await self.runtime.execute(
+            db,
+            current_user=current_user,
+            feature=feature,
+            system_prompt=self._system_prompt(feature),
+            user_prompt=prompt,
+            output_schema=output_schema,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            web_search=web_search,
+            provider_override=provider_override,
+        )
         await self.repository.create_generated_content(
             db,
             organization_id=current_user.organization_id or "",
@@ -982,6 +980,7 @@ class AIDomainService:
         permissions: set[str],
     ) -> dict[str, Any]:
         organization_id = current_user.organization_id or ""
+        entity: Any
         if entity_type == "lead":
             self._require_permission(permissions, "leads:read")
             entity = await self.repository.get_lead(
@@ -1188,12 +1187,8 @@ class AIDomainService:
                     db,
                     organization_id=organization_id,
                     current_user_id=current_user.id,
-                    access=await self._record_access(
-                        db, current_user, operation.entity_type
-                    ),
-                    related_access=await self._related_record_access(
-                        db, current_user, operation
-                    ),
+                    access=await self._record_access(db, current_user, operation.entity_type),
+                    related_access=await self._related_record_access(db, current_user, operation),
                     **operation.model_dump(exclude={"result_key", "title", "report_type"}),
                 )
             explanation, result_count = self._search_explanation(operation, results)
@@ -1743,6 +1738,7 @@ class AIDomainService:
                 message="Both source type and source ID are required when linking a transcript.",
             )
         permissions = await self._permission_keys(db, current_user)
+        source: Any
         if source_type:
             if source_type == "call":
                 self._require_permission(permissions, "calls:recording")
@@ -2051,7 +2047,7 @@ class AIDomainService:
             output_schema=FollowUpRecommendationResponse,
         )
         result = FollowUpRecommendationResponse.model_validate(output)
-        result.entity_type = entity_type
+        result.entity_type = cast(Literal["company", "contact"], entity_type)
         result.entity_id = entity_id
         result.inactive_days = inactive_days
         result.requires_approval = True
@@ -2163,6 +2159,12 @@ class AIDomainService:
         entity_id: str,
         current_user: User,
     ) -> dict:
+        if entity_type not in {"company", "contact"}:
+            raise APIException(
+                status_code=400,
+                code="AI_ENTITY_UNSUPPORTED",
+                message="Customer 360 supports only companies and contacts.",
+            )
         permissions = await self._permission_keys(db, current_user)
         base_permission = "companies:read" if entity_type == "company" else "contacts:read"
         self._require_permission(permissions, base_permission)
@@ -2195,14 +2197,19 @@ class AIDomainService:
             output_schema=Customer360Response,
         )
         result = Customer360Response.model_validate(output)
-        result.entity_type = entity_type
+        result.entity_type = cast(Literal["company", "contact"], entity_type)
         result.entity_id = entity_id
         if include_deals:
-            result.open_deal_value = sum(
-                float(item.get("amount") or 0)
-                for item in context.get("deals", [])
-                if item.get("stage") not in {"Closed Won", "Closed Lost"}
+            deals = cast(list[dict[str, object]], context.get("deals", []))
+            open_deal_value = sum(
+                (
+                    float(cast(Any, item.get("amount") or 0))
+                    for item in deals
+                    if item.get("stage") not in {"Closed Won", "Closed Lost"}
+                ),
+                0.0,
             )
+            result.open_deal_value = open_deal_value
         else:
             result.open_deal_value = 0
         return result.model_dump() | {"run_id": run.id}

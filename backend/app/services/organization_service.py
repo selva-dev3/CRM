@@ -14,7 +14,11 @@ from app.repositories.user_repository import UserRepository
 from app.schemas.crm_schemas import OrganizationUpdate
 from app.services.organization_storage_service import lock_organization_storage
 from app.services.s3_service import s3_service
-from app.services.subscription_plan_service import FREE_PLAN_SLUG, free_subscription_data
+from app.services.subscription_plan_service import (
+    FREE_PLAN_SLUG,
+    apply_plan_to_organization,
+    free_subscription_data,
+)
 from app.services.user_service import UserService
 
 
@@ -150,8 +154,7 @@ class OrganizationDomainService:
                 db,
                 data=free_subscription_data(organization_id=org.id, plan=db_plan, current_users=1),
             )
-            org.plan = db_plan.name
-            org.max_users = db_plan.max_users
+            apply_plan_to_organization(org, db_plan)
             await self._commit(db, "Failed to create subscription")
             await db.refresh(sub)
         return sub

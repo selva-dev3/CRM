@@ -127,9 +127,13 @@ class MilestoneService:
                 access=access,
             )
             due_date = updates["due_date"]
-            if project and due_date and (
-                (project.start_date and due_date < project.start_date)
-                or (project.due_date and due_date > project.due_date)
+            if (
+                project
+                and due_date
+                and (
+                    (project.start_date and due_date < project.start_date)
+                    or (project.due_date and due_date > project.due_date)
+                )
             ):
                 raise APIException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

@@ -65,9 +65,7 @@ async def test_get_inbox_maps_emails():
     service = EmailDomainService(repository=repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.get_inbox(
-        db, page=1, limit=20, search="hi", current_user=_user()
-    )
+    result = await service.get_inbox(db, page=1, limit=20, search="hi", current_user=_user())
 
     assert result[0]["to"] == ["client@example.com"]
     assert result[0]["from_email"] == "rep@company.com"

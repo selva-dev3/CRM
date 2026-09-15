@@ -77,22 +77,30 @@ class ProductService:
             ) from exc
 
     async def list_products(
-        self, db: AsyncSession, *, user: User, page: int, limit: int,
-        search: str | None = None, category: str | None = None,
+        self,
+        db: AsyncSession,
+        *,
+        user: User,
+        page: int,
+        limit: int,
+        search: str | None = None,
+        category: str | None = None,
     ) -> tuple[list[dict], int]:
         organization_id = await self._organization_id(db, user)
         rows = await self.repository.list(
-            db, organization_id=organization_id, page=page, limit=limit,
-            search=search, category=category,
+            db,
+            organization_id=organization_id,
+            page=page,
+            limit=limit,
+            search=search,
+            category=category,
         )
         total = await self.repository.count(
             db, organization_id=organization_id, search=search, category=category
         )
         return [product_to_dict(product, name) for product, name in rows], total
 
-    async def create_product(
-        self, db: AsyncSession, *, payload: ProductBase, user: User
-    ) -> dict:
+    async def create_product(self, db: AsyncSession, *, payload: ProductBase, user: User) -> dict:
         organization_id = await self._organization_id(db, user)
         try:
             category_id = await self._category_id(
@@ -105,7 +113,9 @@ class ProductService:
                     "category_id": category_id,
                     "name": payload.name,
                     "sku": self._sku(payload),
-                    "price": Decimal(str(payload.price if payload.price is not None else payload.unit_price)),
+                    "price": Decimal(
+                        str(payload.price if payload.price is not None else payload.unit_price)
+                    ),
                     "in_stock_quantity": payload.in_stock_quantity or 0,
                     "is_active": payload.is_active if payload.is_active is not None else True,
                 },
@@ -145,7 +155,9 @@ class ProductService:
         except Exception as exc:
             await db.rollback()
             logger.exception("Product category creation failed")
-            raise APIException(status_code=500, message="Unable to create product category") from exc
+            raise APIException(
+                status_code=500, message="Unable to create product category"
+            ) from exc
         return {"message": f"Category '{normalized}' created", "status": "success"}
 
     async def get_product(self, db: AsyncSession, *, product_id: str, user: User) -> dict:
@@ -186,9 +198,7 @@ class ProductService:
             await db.rollback()
             raise
 
-    async def delete_products(
-        self, db: AsyncSession, *, ids: list[str], user: User
-    ) -> int:
+    async def delete_products(self, db: AsyncSession, *, ids: list[str], user: User) -> int:
         organization_id = await self._organization_id(db, user)
         products = await self.repository.list_by_ids(db, ids=ids, organization_id=organization_id)
         try:

@@ -77,9 +77,7 @@ class EmailRepository:
         return res.scalars().all()
 
     @staticmethod
-    def _for_contact_query(
-        *, organization_id: str, contact_id: str, recipient_email: str
-    ):
+    def _for_contact_query(*, organization_id: str, contact_id: str, recipient_email: str):
         """Match explicit relationships plus unlinked legacy recipient rows.
 
         An email explicitly linked to a different contact is never reassigned by
@@ -201,9 +199,7 @@ class EmailRepository:
         filters = [Email.id == email_id, Email.organization_id == organization_id]
         if access_filter is not None:
             filters.append(access_filter)
-        result = await db.execute(
-            select(Email).where(*filters)
-        )
+        result = await db.execute(select(Email).where(*filters))
         return result.scalars().first()
 
     async def get_by_idempotency_key(

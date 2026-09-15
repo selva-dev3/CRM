@@ -33,6 +33,7 @@ from app.schemas.ai import (
 )
 from app.schemas.dashboard import DashboardAiInsightsResponse
 from app.services.ai_domain_service import AIDomainService
+from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr, require_await
 
 
 def _user(**overrides: Any) -> User:
@@ -111,7 +112,7 @@ def _repository() -> Any:
 
 def _runtime(output: Any) -> AsyncMock:
     runtime = AsyncMock()
-    runtime.execute.return_value = (
+    as_mock(runtime.execute).return_value = (
         output,
         SimpleNamespace(id="run-1", model_name="gpt-4o-mini", total_tokens=25),
     )
@@ -155,10 +156,12 @@ def test_configured_models_includes_gemini_without_hard_coded_model(monkeypatch)
 async def test_evaluate_lead_score_is_tenant_scoped_and_persists_history():
     repository = _repository()
     lead = _lead()
-    repository.get_lead.return_value = lead
+    as_mock(repository.get_lead).return_value = lead
     runtime = _runtime(_lead_result())
     service = AIDomainService(repository=repository, runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "leads:update"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "leads:update"})
+    )
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.evaluate_lead_score(db, "lead-1", _user())
@@ -166,39 +169,39 @@ async def test_evaluate_lead_score_is_tenant_scoped_and_persists_history():
     assert result["score"] == 88
     assert result["conversion_probability"] == 72
     assert result["run_id"] == "run-1"
-    instructions = runtime.execute.await_args.kwargs["user_prompt"]
+    instructions = require_await(runtime.execute).kwargs["user_prompt"]
     assert "return 70 for 70%, not 0.7" in instructions
-    repository.get_lead.assert_awaited_once_with(
+    as_async_mock(repository.get_lead).assert_awaited_once_with(
         db, lead_id="lead-1", organization_id="org-1", access=ANY
     )
-    repository.save_lead_score.assert_awaited_once_with(
+    as_async_mock(repository.save_lead_score).assert_awaited_once_with(
         db,
         lead=lead,
         score=88,
         confidence=0.86,
         reasons_json='["Senior buyer", "Target company"]',
     )
-    assert db.commit.await_count == 2
+    assert as_async_mock(db.commit).await_count == 2
 
 
 @pytest.mark.asyncio
 async def test_evaluate_lead_score_hides_cross_tenant_lead():
     repository = _repository()
-    repository.get_lead.return_value = None
+    as_mock(repository.get_lead).return_value = None
     runtime = _runtime(_lead_result())
     service = AIDomainService(repository=repository, runtime=runtime)
 
     with pytest.raises(NotFoundError):
         await service.evaluate_lead_score(AsyncMock(spec=AsyncSession), "other-org-lead", _user())
 
-    runtime.execute.assert_not_awaited()
+    as_async_mock(runtime.execute).assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_lead_assignment_recommendation_uses_only_authorized_tenant_candidates():
     repository = _repository()
-    repository.get_lead.return_value = _lead()
-    repository.get_lead_assignment_candidates.return_value = [
+    as_mock(repository.get_lead).return_value = _lead()
+    as_mock(repository.get_lead_assignment_candidates).return_value = [
         {
             "id": "rep-1",
             "name": "Alex Rep",
@@ -211,12 +214,16 @@ async def test_lead_assignment_recommendation_uses_only_authorized_tenant_candid
     result.recommended_owner_id = "foreign-rep"
     result.recommended_owner_reason = "Unsupported provider suggestion"
     service = AIDomainService(repository=repository, runtime=_runtime(result))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "leads:update", "users:read"})
+    replace_attr(
+        service,
+        "_permission_keys",
+        AsyncMock(return_value={"ai:generate", "leads:update", "users:read"}),
+    )
     db = AsyncMock(spec=AsyncSession)
 
     response = await service.evaluate_lead_score(db, "lead-1", _user())
 
-    repository.get_lead_assignment_candidates.assert_awaited_once_with(
+    as_async_mock(repository.get_lead_assignment_candidates).assert_awaited_once_with(
         db,
         organization_id="org-1",
     )
@@ -232,7 +239,7 @@ async def test_batch_lead_scoring_lists_only_current_organization():
     result = await service.batch_lead_scoring(db, _user())
 
     assert result == {"processed_count": 0, "updated_count": 0, "failures": []}
-    repository.list_leads.assert_awaited_once_with(
+    as_async_mock(repository.list_leads).assert_awaited_once_with(
         db, organization_id="org-1", access=ANY
     )
 
@@ -247,14 +254,14 @@ async def test_generate_email_rejects_blank_prompt_before_provider_call():
             AsyncMock(spec=AsyncSession), EmailGeneratorRequest(prompt=" "), _user()
         )
 
-    runtime.execute.assert_not_awaited()
+    as_async_mock(runtime.execute).assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_generate_email_requires_underlying_email_permission():
     runtime = AsyncMock()
     service = AIDomainService(repository=_repository(), runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate"}))
 
     with pytest.raises(ForbiddenError):
         await service.generate_email(
@@ -263,7 +270,7 @@ async def test_generate_email_requires_underlying_email_permission():
             _user(),
         )
 
-    runtime.execute.assert_not_awaited()
+    as_async_mock(runtime.execute).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -276,7 +283,9 @@ async def test_generate_email_uses_provider_and_persists_output():
     )
     runtime = _runtime(output)
     service = AIDomainService(repository=repository, runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "emails:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "emails:read"})
+    )
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.generate_email(
@@ -286,15 +295,15 @@ async def test_generate_email_uses_provider_and_persists_output():
     )
 
     assert result["subject"] == "Next steps"
-    repository.create_generated_content.assert_awaited_once()
-    assert repository.create_generated_content.await_args.kwargs["organization_id"] == "org-1"
-    db.commit.assert_awaited_once()
+    as_async_mock(repository.create_generated_content).assert_awaited_once()
+    assert require_await(repository.create_generated_content).kwargs["organization_id"] == "org-1"
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_deal_intelligence_is_tenant_scoped():
     repository = _repository()
-    repository.get_deal.return_value = _deal()
+    as_mock(repository.get_deal).return_value = _deal()
     output = DealIntelligenceResponse(
         deal_id="deal-1",
         win_probability=70,
@@ -313,10 +322,10 @@ async def test_deal_intelligence_is_tenant_scoped():
     result = await service.predict_deal_forecast(db, "deal-1", _user())
 
     assert result["win_probability"] == 70
-    repository.get_deal.assert_awaited_once_with(
+    as_async_mock(repository.get_deal).assert_awaited_once_with(
         db, deal_id="deal-1", organization_id="org-1", access=ANY
     )
-    repository.get_deal_signals.assert_awaited_once_with(
+    as_async_mock(repository.get_deal_signals).assert_awaited_once_with(
         db, deal_id="deal-1", organization_id="org-1", access=ANY
     )
 
@@ -324,7 +333,7 @@ async def test_deal_intelligence_is_tenant_scoped():
 @pytest.mark.asyncio
 async def test_next_best_action_supports_tenant_scoped_contacts():
     repository = _repository()
-    repository.get_contact.return_value = Contact(
+    as_mock(repository.get_contact).return_value = Contact(
         id="contact-1",
         organization_id="org-1",
         name="Jane Buyer",
@@ -340,13 +349,15 @@ async def test_next_best_action_supports_tenant_scoped_contacts():
         channel="Phone",
     )
     service = AIDomainService(repository=repository, runtime=_runtime(output))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "contacts:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "contacts:read"})
+    )
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.suggest_next_best_action(db, "contact", "contact-1", _user())
 
     assert result["entity_id"] == "contact-1"
-    repository.get_contact.assert_awaited_once_with(
+    as_async_mock(repository.get_contact).assert_awaited_once_with(
         db, contact_id="contact-1", organization_id="org-1", access=ANY
     )
 
@@ -354,7 +365,7 @@ async def test_next_best_action_supports_tenant_scoped_contacts():
 @pytest.mark.asyncio
 async def test_icp_match_requires_tenant_configuration_before_provider_call():
     repository = _repository()
-    repository.get_lead.return_value = _lead()
+    as_mock(repository.get_lead).return_value = _lead()
     runtime = AsyncMock()
     service = AIDomainService(repository=repository, runtime=runtime)
     db = AsyncMock(spec=AsyncSession)
@@ -363,15 +374,15 @@ async def test_icp_match_requires_tenant_configuration_before_provider_call():
         await service.evaluate_icp_match(db, "lead-1", _user())
 
     assert exc_info.value.code == "AI_ICP_NOT_CONFIGURED"
-    repository.get_organization_config.assert_awaited_once_with(db, "org-1")
-    runtime.execute.assert_not_awaited()
+    as_async_mock(repository.get_organization_config).assert_awaited_once_with(db, "org-1")
+    as_async_mock(runtime.execute).assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_icp_match_uses_current_organization_profile():
     repository = _repository()
-    repository.get_lead.return_value = _lead(industry="Software", company_size="51-200")
-    repository.get_organization_config.return_value = SimpleNamespace(
+    as_mock(repository.get_lead).return_value = _lead(industry="Software", company_size="51-200")
+    as_mock(repository.get_organization_config).return_value = SimpleNamespace(
         icp_profile_json='{"industries":["Software"],"company_size_ranges":["51-200"]}'
     )
     output = ICPMatchResponse(
@@ -390,7 +401,7 @@ async def test_icp_match_uses_current_organization_profile():
     result = await service.evaluate_icp_match(db, "lead-1", _user())
 
     assert result["overall_fit"] == 90
-    context = runtime.execute.await_args.kwargs["user_prompt"]
+    context = require_await(runtime.execute).kwargs["user_prompt"]
     assert '"organization_icp_profile"' in context
     assert '"Software"' in context
 
@@ -398,7 +409,7 @@ async def test_icp_match_uses_current_organization_profile():
 @pytest.mark.asyncio
 async def test_ai_configuration_update_is_tenant_scoped():
     repository = _repository()
-    repository.get_organization_config.return_value = SimpleNamespace(
+    as_mock(repository.get_organization_config).return_value = SimpleNamespace(
         enabled=False,
         provider=None,
         model_name=None,
@@ -416,46 +427,46 @@ async def test_ai_configuration_update_is_tenant_scoped():
     result = await service.update_organization_config(db, payload, _user())
 
     assert result["enabled"] is False
-    repository.update_organization_config.assert_awaited_once_with(
+    as_async_mock(repository.update_organization_config).assert_awaited_once_with(
         db,
         organization_id="org-1",
         enabled=False,
         monthly_cost_limit_usd=25.0,
-        icp_profile_json=payload.icp_profile.model_dump_json(),
+        icp_profile_json=payload.icp_profile.model_dump_json(),  # type: ignore[union-attr]
         update_icp_profile=True,
     )
-    db.commit.assert_awaited_once()
+    as_async_mock(db.commit).assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_sales_assistant_rejects_cross_tenant_conversation():
     repository = _repository()
-    repository.get_conversation.return_value = None
+    as_mock(repository.get_conversation).return_value = None
     service = AIDomainService(repository=repository, runtime=AsyncMock())
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
 
     with pytest.raises(NotFoundError):
         await service.sales_assistant_chat(
             AsyncMock(spec=AsyncSession), "Deal status", "other-conversation", _user()
         )
 
-    assert repository.get_conversation.await_args.kwargs["organization_id"] == "org-1"
+    assert require_await(repository.get_conversation).kwargs["organization_id"] == "org-1"
 
 
 @pytest.mark.asyncio
 async def test_conversation_history_is_scoped_to_current_user_and_organization():
     repository = _repository()
-    repository.get_conversation.return_value = SimpleNamespace(
+    as_mock(repository.get_conversation).return_value = SimpleNamespace(
         id="conversation-1", title="Pipeline", model_name="model-a"
     )
-    repository.list_conversation_prompts.return_value = []
+    as_mock(repository.list_conversation_prompts).return_value = []
     service = AIDomainService(repository=repository, runtime=AsyncMock())
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.get_conversation_history(db, "conversation-1", _user())
 
     assert result == {"id": "conversation-1", "title": "Pipeline", "messages": []}
-    repository.get_conversation.assert_awaited_once_with(
+    as_async_mock(repository.get_conversation).assert_awaited_once_with(
         db,
         conversation_id="conversation-1",
         organization_id="org-1",
@@ -472,42 +483,48 @@ async def test_delete_conversation_does_not_delete_cross_tenant_record():
     with pytest.raises(NotFoundError):
         await service.delete_conversation(db, "foreign-conversation", _user())
 
-    repository.delete_conversation.assert_awaited_once_with(
+    as_async_mock(repository.delete_conversation).assert_awaited_once_with(
         db,
         conversation_id="foreign-conversation",
         organization_id="org-1",
         user_id="user-1",
     )
-    db.commit.assert_not_awaited()
+    as_async_mock(db.commit).assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_sales_assistant_planner_receives_only_permitted_crm_catalog():
     repository = _repository()
-    repository.execute_search_plan.return_value = [{"count": 1}]
+    as_mock(repository.execute_search_plan).return_value = [{"count": 1}]
     plan = CRMChatPlan(
         operations=[CRMSearchPlan(intent="count", entity_type="deal", result_key="deals")]
     )
     output = AIChatGeneratedOutput(response="One matching deal was found")
     service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read", "tasks:read"})
+    replace_attr(
+        service,
+        "_permission_keys",
+        AsyncMock(return_value={"ai:generate", "deals:read", "tasks:read"}),
+    )
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.sales_assistant_chat(db, "Expansion", None, _user())
 
     assert result["conversation_id"] == "conversation-1"
-    planner_prompt = service.runtime.execute.await_args_list[0].kwargs["user_prompt"]
+    planner_prompt = as_async_mock(service.runtime.execute).await_args_list[0].kwargs["user_prompt"]  # type: ignore[attr-defined]
     assert '"deal"' in planner_prompt
     assert '"task"' in planner_prompt
     assert '"lead"' not in planner_prompt
     assert result["result_blocks"][0]["result_count"] == 1
-    repository.create_prompt.assert_awaited_once()
+    as_async_mock(repository.create_prompt).assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_sales_assistant_drops_evidence_not_present_in_authorized_context():
     repository = _repository()
-    repository.execute_search_plan.return_value = [{"id": "deal-1", "title": "Authorized deal"}]
+    as_mock(repository.execute_search_plan).return_value = [
+        {"id": "deal-1", "title": "Authorized deal"}
+    ]
     plan = CRMChatPlan(operations=[CRMSearchPlan(entity_type="deal")])
     output = AIChatGeneratedOutput(
         response="A deal was found.",
@@ -517,7 +534,7 @@ async def test_sales_assistant_drops_evidence_not_present_in_authorized_context(
         ],
     )
     service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
 
     result = await service.sales_assistant_chat(
         AsyncMock(spec=AsyncSession), "Find a deal", None, _user()
@@ -548,7 +565,7 @@ async def test_sales_assistant_persists_only_supported_confirmation_actions():
         ],
     )
     service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "tasks:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "tasks:read"}))
 
     result = await service.sales_assistant_chat(
         AsyncMock(spec=AsyncSession), "Create a follow-up", None, _user()
@@ -556,14 +573,14 @@ async def test_sales_assistant_persists_only_supported_confirmation_actions():
 
     assert len(result["proposed_actions"]) == 1
     assert result["proposed_actions"][0]["proposal_id"] == "proposal-1"
-    assert repository.create_action.await_args.kwargs["organization_id"] == "org-1"
-    assert repository.create_action.await_args.kwargs["user_id"] == "user-1"
+    assert require_await(repository.create_action).kwargs["organization_id"] == "org-1"
+    assert require_await(repository.create_action).kwargs["user_id"] == "user-1"
 
 
 @pytest.mark.asyncio
 async def test_sales_assistant_executes_database_count_and_returns_result_block():
     repository = _repository()
-    repository.execute_search_plan.return_value = [{"count": 7}]
+    as_mock(repository.execute_search_plan).return_value = [{"count": 7}]
     plan = CRMChatPlan(
         operations=[
             CRMSearchPlan(
@@ -576,7 +593,9 @@ async def test_sales_assistant_executes_database_count_and_returns_result_block(
     )
     output = AIChatGeneratedOutput(response="There are 7 companies.")
     service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
 
     result = await service.sales_assistant_chat(
         AsyncMock(spec=AsyncSession), "How many companies do we have?", None, _user()
@@ -585,7 +604,7 @@ async def test_sales_assistant_executes_database_count_and_returns_result_block(
     assert result["response"] == "There are 7 matching company record(s)."
     assert result["result_blocks"][0]["results"] == [{"count": 7}]
     assert result["result_blocks"][0]["result_count"] == 7
-    assert repository.execute_search_plan.await_args.kwargs["organization_id"] == "org-1"
+    assert require_await(repository.execute_search_plan).kwargs["organization_id"] == "org-1"
 
 
 @pytest.mark.asyncio
@@ -611,8 +630,10 @@ async def test_sales_assistant_executes_multiple_authorized_operations():
         repository=repository,
         runtime=_chat_runtime(plan, AIChatGeneratedOutput(response="Summary")),
     )
-    service._permission_keys = AsyncMock(
-        return_value={"ai:generate", "companies:read", "deals:read"}
+    replace_attr(
+        service,
+        "_permission_keys",
+        AsyncMock(return_value={"ai:generate", "companies:read", "deals:read"}),
     )
 
     result = await service.sales_assistant_chat(
@@ -620,7 +641,7 @@ async def test_sales_assistant_executes_multiple_authorized_operations():
     )
 
     assert [block["key"] for block in result["result_blocks"]] == ["companies", "pipeline"]
-    assert repository.execute_search_plan.await_count == 2
+    assert as_async_mock(repository.execute_search_plan).await_count == 2
 
 
 @pytest.mark.asyncio
@@ -633,19 +654,21 @@ async def test_sales_assistant_checks_every_operation_permission_before_querying
         ]
     )
     runtime = AsyncMock()
-    runtime.execute.return_value = (
+    as_mock(runtime.execute).return_value = (
         plan,
         SimpleNamespace(id="plan-run", model_name="configured-model", total_tokens=10),
     )
     service = AIDomainService(repository=repository, runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
 
     with pytest.raises(ForbiddenError, match="invoices:read"):
         await service.sales_assistant_chat(
             AsyncMock(spec=AsyncSession), "Compare companies and invoices", None, _user()
         )
 
-    repository.execute_search_plan.assert_not_awaited()
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -668,21 +691,23 @@ async def test_project_task_metrics_require_both_project_and_task_permissions():
     )
     runtime = _runtime(plan)
     service = AIDomainService(repository=repository, runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "projects:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "projects:read"})
+    )
 
     with pytest.raises(ForbiddenError, match="tasks:read"):
         await service.sales_assistant_chat(
             AsyncMock(spec=AsyncSession), "Which projects have pending tasks?", None, _user()
         )
 
-    repository.execute_search_plan.assert_not_awaited()
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_sales_assistant_uses_tenant_scoped_report_service():
     repository = _repository()
     reports = AsyncMock()
-    reports.get_pipeline_velocity_report.return_value = {
+    as_mock(reports.get_pipeline_velocity_report).return_value = {
         "report_type": "Pipeline Velocity",
         "metrics": {"open_deals": 4},
         "generated_at": "2026-09-04",
@@ -695,22 +720,28 @@ async def test_sales_assistant_uses_tenant_scoped_report_service():
         runtime=_chat_runtime(plan, AIChatGeneratedOutput(response="There are 4 open deals.")),
         report_service_instance=reports,
     )
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "reports:read", "deals:read"})
+    replace_attr(
+        service,
+        "_permission_keys",
+        AsyncMock(return_value={"ai:generate", "reports:read", "deals:read"}),
+    )
     db = AsyncMock(spec=AsyncSession)
     user = _user()
 
     result = await service.sales_assistant_chat(db, "Show pipeline velocity", None, user)
 
-    reports.get_pipeline_velocity_report.assert_awaited_once_with(db, current_user=user)
-    repository.execute_search_plan.assert_not_awaited()
+    as_async_mock(reports.get_pipeline_velocity_report).assert_awaited_once_with(
+        db, current_user=user
+    )
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
     assert result["result_blocks"][0]["results"][0]["metrics"]["open_deals"] == 4
 
 
 @pytest.mark.asyncio
 async def test_sales_assistant_uses_scoped_conversation_history_for_follow_up():
     repository = _repository()
-    repository.get_conversation.return_value = SimpleNamespace(id="conversation-1")
-    repository.list_conversation_prompts.return_value = [
+    as_mock(repository.get_conversation).return_value = SimpleNamespace(id="conversation-1")
+    as_mock(repository.list_conversation_prompts).return_value = [
         SimpleNamespace(user_prompt="Find Acme", ai_response="I found Acme.")
     ]
     plan = CRMChatPlan(operations=[CRMSearchPlan(entity_type="company")])
@@ -718,18 +749,20 @@ async def test_sales_assistant_uses_scoped_conversation_history_for_follow_up():
         repository=repository,
         runtime=_chat_runtime(plan, AIChatGeneratedOutput(response="Acme is in software.")),
     )
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
     db = AsyncMock(spec=AsyncSession)
 
     await service.sales_assistant_chat(db, "What industry is it in?", "conversation-1", _user())
 
-    repository.list_conversation_prompts.assert_awaited_once_with(
+    as_async_mock(repository.list_conversation_prompts).assert_awaited_once_with(
         db,
         conversation_id="conversation-1",
         organization_id="org-1",
         user_id="user-1",
     )
-    planner_prompt = service.runtime.execute.await_args_list[0].kwargs["user_prompt"]
+    planner_prompt = as_async_mock(service.runtime.execute).await_args_list[0].kwargs["user_prompt"]  # type: ignore[attr-defined]
     assert "Find Acme" in planner_prompt
 
 
@@ -742,21 +775,23 @@ async def test_sales_assistant_clarification_does_not_query_database():
     )
     runtime = _runtime(plan)
     service = AIDomainService(repository=repository, runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
 
     result = await service.sales_assistant_chat(
         AsyncMock(spec=AsyncSession), "Tell me about it", None, _user()
     )
 
     assert result["response"] == "Which customer do you mean?"
-    repository.execute_search_plan.assert_not_awaited()
-    assert runtime.execute.await_count == 1
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
+    assert as_async_mock(runtime.execute).await_count == 1
 
 
 @pytest.mark.asyncio
 async def test_confirm_action_requires_underlying_task_permission():
     repository = _repository()
-    repository.get_pending_action.return_value = SimpleNamespace(
+    as_mock(repository.get_pending_action).return_value = SimpleNamespace(
         id="proposal-1",
         action_type="create_task",
         payload_json='{"title":"Follow up"}',
@@ -768,12 +803,12 @@ async def test_confirm_action_requires_underlying_task_permission():
         runtime=AsyncMock(),
         task_service_instance=tasks,
     )
-    service._permission_keys = AsyncMock(return_value={"ai:generate"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate"}))
 
     with pytest.raises(ForbiddenError):
         await service.confirm_action(AsyncMock(spec=AsyncSession), "proposal-1", _user())
 
-    tasks.create_task.assert_not_awaited()
+    as_async_mock(tasks.create_task).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -791,27 +826,29 @@ async def test_confirm_action_is_scoped_and_creates_task_for_current_user():
         result_json=None,
         executed_at=None,
     )
-    repository.get_pending_action.return_value = action
+    as_mock(repository.get_pending_action).return_value = action
     tasks = AsyncMock()
-    tasks.create_task.return_value = {"id": "task-1", "title": "Follow up"}
+    as_mock(tasks.create_task).return_value = {"id": "task-1", "title": "Follow up"}
     service = AIDomainService(
         repository=repository,
         runtime=AsyncMock(),
         task_service_instance=tasks,
     )
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "tasks:create"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "tasks:create"})
+    )
     db = AsyncMock(spec=AsyncSession)
     actor = _user()
 
     result = await service.confirm_action(db, "proposal-1", actor)
 
-    repository.get_pending_action.assert_awaited_once_with(
+    as_async_mock(repository.get_pending_action).assert_awaited_once_with(
         db,
         action_id="proposal-1",
         organization_id="org-1",
         user_id="user-1",
     )
-    task_payload = tasks.create_task.await_args.args[1]
+    task_payload = require_await(tasks.create_task).args[1]
     assert task_payload.assigned_to == "user-1"
     assert task_payload.status == "Pending"
     assert result["status"] == "executed"
@@ -822,14 +859,16 @@ async def test_confirm_action_is_scoped_and_creates_task_for_current_user():
 async def test_crm_search_checks_scope_permission_before_ai_planning():
     runtime = AsyncMock()
     service = AIDomainService(repository=_repository(), runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "contacts:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "contacts:read"})
+    )
 
     with pytest.raises(ForbiddenError):
         await service.search_crm(
             AsyncMock(spec=AsyncSession), "open deals over 500000", "deal", _user()
         )
 
-    runtime.execute.assert_not_awaited()
+    as_async_mock(runtime.execute).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -843,7 +882,9 @@ async def test_crm_search_does_not_query_records_when_provider_fails():
         message="The configured AI provider credentials were rejected.",
     )
     service = AIDomainService(repository=repository, runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
 
     with pytest.raises(APIException) as exc_info:
         await service.search_crm(
@@ -854,7 +895,7 @@ async def test_crm_search_does_not_query_records_when_provider_fails():
         )
 
     assert exc_info.value.code == "AI_PROVIDER_AUTH_FAILED"
-    repository.execute_search_plan.assert_not_awaited()
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -869,14 +910,18 @@ async def test_crm_search_executes_only_validated_tenant_scoped_plan():
         minimum_open_deal_amount=500000,
     )
     service = AIDomainService(repository=repository, runtime=_runtime(plan))
-    service._permission_keys = AsyncMock(
-        return_value={
-            "ai:generate",
-            "calls:read",
-            "companies:read",
-            "contacts:read",
-            "deals:read",
-        }
+    replace_attr(
+        service,
+        "_permission_keys",
+        AsyncMock(
+            return_value={
+                "ai:generate",
+                "calls:read",
+                "companies:read",
+                "contacts:read",
+                "deals:read",
+            }
+        ),
     )
     db = AsyncMock(spec=AsyncSession)
 
@@ -890,8 +935,10 @@ async def test_crm_search_executes_only_validated_tenant_scoped_plan():
     assert result["result_count"] == 1
     assert result["plan"]["entity_type"] == "company"
     assert result["explanation"] == "Found 1 matching company record(s)."
-    assert repository.execute_search_plan.await_args.kwargs["organization_id"] == "org-1"
-    assert repository.execute_search_plan.await_args.kwargs["minimum_open_deal_amount"] == 500000
+    assert require_await(repository.execute_search_plan).kwargs["organization_id"] == "org-1"
+    assert (
+        require_await(repository.execute_search_plan).kwargs["minimum_open_deal_amount"] == 500000
+    )
 
 
 @pytest.mark.asyncio
@@ -899,7 +946,9 @@ async def test_crm_search_rejects_provider_scope_escalation():
     plan = CRMSearchPlan(entity_type="deal")
     runtime = _runtime(plan)
     service = AIDomainService(repository=_repository(), runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
 
     with pytest.raises(APIException) as exc_info:
         await service.search_crm(AsyncMock(spec=AsyncSession), "Show Acme", "company", _user())
@@ -913,7 +962,9 @@ async def test_crm_search_auto_detects_count_intent_and_inferred_permission():
     repository.execute_search_plan = AsyncMock(return_value=[{"count": 7}])
     plan = CRMSearchPlan(intent="count", entity_type="company")
     service = AIDomainService(repository=repository, runtime=_runtime(plan))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
 
     result = await service.search_crm(
         AsyncMock(spec=AsyncSession), "How many companies do we have?", None, _user()
@@ -922,7 +973,7 @@ async def test_crm_search_auto_detects_count_intent_and_inferred_permission():
     assert result["result_count"] == 7
     assert result["results"] == [{"count": 7}]
     assert result["explanation"] == "There are 7 matching company record(s)."
-    repository.execute_search_plan.assert_awaited_once()
+    as_async_mock(repository.execute_search_plan).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -936,14 +987,16 @@ async def test_crm_search_aggregate_requires_related_deal_permission():
         aggregate_field="open_deal_value",
     )
     service = AIDomainService(repository=repository, runtime=_runtime(plan))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
 
     with pytest.raises(ForbiddenError):
         await service.search_crm(
             AsyncMock(spec=AsyncSession), "What is the total open deal value?", None, _user()
         )
 
-    repository.execute_search_plan.assert_not_awaited()
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -956,27 +1009,27 @@ async def test_crm_search_related_name_requires_underlying_permission():
         include_fields=["company_name"],
     )
     service = AIDomainService(repository=repository, runtime=_runtime(plan))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
 
     with pytest.raises(ForbiddenError):
         await service.search_crm(AsyncMock(spec=AsyncSession), "Show deals for Acme", None, _user())
 
-    repository.execute_search_plan.assert_not_awaited()
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
 
 
 def test_crm_search_catalog_hides_related_fields_without_underlying_permission():
     catalog = AIDomainService._search_catalog({"deals:read"})
 
-    assert "company_name" not in catalog["deal"]["fields"]
-    assert "contact_name" not in catalog["deal"]["fields"]
-    assert "owner_name" not in catalog["deal"]["fields"]
+    assert "company_name" not in catalog["deal"]["fields"]  # type: ignore[operator]
+    assert "contact_name" not in catalog["deal"]["fields"]  # type: ignore[operator]
+    assert "owner_name" not in catalog["deal"]["fields"]  # type: ignore[operator]
 
     authorized_catalog = AIDomainService._search_catalog(
         {"deals:read", "companies:read", "contacts:read", "users:read"}
     )
-    assert "company_name" in authorized_catalog["deal"]["fields"]
-    assert "contact_name" in authorized_catalog["deal"]["fields"]
-    assert "owner_name" in authorized_catalog["deal"]["fields"]
+    assert "company_name" in authorized_catalog["deal"]["fields"]  # type: ignore[operator]
+    assert "contact_name" in authorized_catalog["deal"]["fields"]  # type: ignore[operator]
+    assert "owner_name" in authorized_catalog["deal"]["fields"]  # type: ignore[operator]
 
 
 @pytest.mark.asyncio
@@ -1000,7 +1053,7 @@ async def test_crm_search_returns_database_aggregate_without_ai_fabrication():
         filters=[{"field": "stage", "operator": "equals", "value": "open"}],
     )
     service = AIDomainService(repository=repository, runtime=_runtime(plan))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
 
     result = await service.search_crm(
         AsyncMock(spec=AsyncSession), "What is the total value of open deals?", None, _user()
@@ -1022,7 +1075,7 @@ async def test_crm_search_returns_grouped_comparison_from_database_results():
     )
     plan = CRMSearchPlan(intent="comparison", entity_type="deal", group_by="stage")
     service = AIDomainService(repository=repository, runtime=_runtime(plan))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
 
     result = await service.search_crm(
         AsyncMock(spec=AsyncSession), "Compare deal counts by stage", None, _user()
@@ -1044,13 +1097,13 @@ async def test_crm_search_passes_date_and_filter_plan_to_tenant_repository():
         filters=[{"field": "city", "operator": "equals", "value": "Chennai"}],
     )
     service = AIDomainService(repository=repository, runtime=_runtime(plan))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "leads:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "leads:read"}))
 
     await service.search_crm(
         AsyncMock(spec=AsyncSession), "Which Chennai leads were created this month?", None, _user()
     )
 
-    kwargs = repository.execute_search_plan.await_args.kwargs
+    kwargs = require_await(repository.execute_search_plan).kwargs
     assert kwargs["organization_id"] == "org-1"
     assert kwargs["date_range"] == "this_month"
     assert kwargs["filters"][0]["value"] == "Chennai"
@@ -1064,14 +1117,16 @@ async def test_crm_search_rejects_inferred_entity_without_permission():
         repository=repository,
         runtime=_runtime(CRMSearchPlan(intent="count", entity_type="deal")),
     )
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
 
     with pytest.raises(ForbiddenError):
         await service.search_crm(
             AsyncMock(spec=AsyncSession), "How many open deals are there?", None, _user()
         )
 
-    repository.execute_search_plan.assert_not_awaited()
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1083,7 +1138,7 @@ async def test_crm_search_rejects_invalid_provider_filter_operation():
         filters=[{"field": "amount", "operator": "contains", "value": "500"}],
     )
     service = AIDomainService(repository=repository, runtime=_runtime(plan))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "deals:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
 
     with pytest.raises(APIException) as exc_info:
         await service.search_crm(
@@ -1091,13 +1146,13 @@ async def test_crm_search_rejects_invalid_provider_filter_operation():
         )
 
     assert exc_info.value.code == "AI_INVALID_SEARCH_PLAN"
-    repository.execute_search_plan.assert_not_awaited()
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_repository_count_plan_keeps_organization_scope_with_text_filter():
     db = AsyncMock(spec=AsyncSession)
-    db.scalar.return_value = 2
+    as_mock(db.scalar).return_value = 2
 
     result = await AIRepository().execute_search_plan(
         db,
@@ -1107,7 +1162,7 @@ async def test_repository_count_plan_keeps_organization_scope_with_text_filter()
         text_query="Acme",
     )
 
-    statement = db.scalar.await_args.args[0]
+    statement = require_await(db.scalar).args[0]
     sql = str(statement)
     assert "companies.organization_id" in sql
     assert "lower(companies.name)" in sql.lower() or "companies.name" in sql
@@ -1118,8 +1173,8 @@ async def test_repository_count_plan_keeps_organization_scope_with_text_filter()
 async def test_repository_company_city_filter_is_tenant_scoped():
     db = AsyncMock(spec=AsyncSession)
     query_result = Mock()
-    query_result.all.return_value = []
-    db.execute.return_value = query_result
+    as_mock(query_result.all).return_value = []
+    as_mock(db.execute).return_value = query_result
 
     await AIRepository().execute_search_plan(
         db,
@@ -1129,7 +1184,7 @@ async def test_repository_company_city_filter_is_tenant_scoped():
         filters=[{"field": "city", "operator": "equals", "value": "Chennai"}],
     )
 
-    statement = db.execute.await_args.args[0]
+    statement = require_await(db.execute).args[0]
     sql = str(statement)
     assert "companies.organization_id" in sql
     assert "contacts.organization_id" in sql
@@ -1140,8 +1195,8 @@ async def test_repository_company_city_filter_is_tenant_scoped():
 async def test_repository_related_company_name_is_tenant_scoped():
     db = AsyncMock(spec=AsyncSession)
     query_result = Mock()
-    query_result.all.return_value = []
-    db.execute.return_value = query_result
+    as_mock(query_result.all).return_value = []
+    as_mock(db.execute).return_value = query_result
 
     await AIRepository().execute_search_plan(
         db,
@@ -1152,7 +1207,7 @@ async def test_repository_related_company_name_is_tenant_scoped():
         include_fields=["company_name"],
     )
 
-    sql = str(db.execute.await_args.args[0])
+    sql = str(require_await(db.execute).args[0])
     assert "deals.organization_id" in sql
     assert "companies.organization_id" in sql
     assert "companies.name" in sql
@@ -1162,8 +1217,8 @@ async def test_repository_related_company_name_is_tenant_scoped():
 async def test_repository_related_company_name_respects_related_record_scope():
     db = AsyncMock(spec=AsyncSession)
     query_result = Mock()
-    query_result.all.return_value = []
-    db.execute.return_value = query_result
+    as_mock(query_result.all).return_value = []
+    as_mock(db.execute).return_value = query_result
 
     await AIRepository().execute_search_plan(
         db,
@@ -1180,7 +1235,7 @@ async def test_repository_related_company_name_respects_related_record_scope():
         include_fields=["company_name"],
     )
 
-    sql = str(db.execute.await_args.args[0])
+    sql = str(require_await(db.execute).args[0])
     assert "companies.owner_id" in sql
 
 
@@ -1188,8 +1243,8 @@ async def test_repository_related_company_name_respects_related_record_scope():
 async def test_repository_related_field_without_scope_fails_closed():
     db = AsyncMock(spec=AsyncSession)
     query_result = Mock()
-    query_result.all.return_value = []
-    db.execute.return_value = query_result
+    as_mock(query_result.all).return_value = []
+    as_mock(db.execute).return_value = query_result
 
     await AIRepository().execute_search_plan(
         db,
@@ -1198,7 +1253,7 @@ async def test_repository_related_field_without_scope_fails_closed():
         include_fields=["open_deal_value"],
     )
 
-    assert "WHERE false" in str(db.execute.await_args.args[0])
+    assert "WHERE false" in str(require_await(db.execute).args[0])
 
 
 @pytest.mark.asyncio
@@ -1211,8 +1266,8 @@ async def test_repository_linked_content_respects_parent_record_scope(
 ):
     db = AsyncMock(spec=AsyncSession)
     query_result = Mock()
-    query_result.all.return_value = []
-    db.execute.return_value = query_result
+    as_mock(query_result.all).return_value = []
+    as_mock(db.execute).return_value = query_result
     assigned = RecordAccessContext(
         scope="assigned",
         user_id="user-1",
@@ -1244,7 +1299,7 @@ async def test_repository_linked_content_respects_parent_record_scope(
         related_access=dict.fromkeys(parent_modules, assigned),
     )
 
-    sql = str(db.execute.await_args.args[0])
+    sql = str(require_await(db.execute).args[0])
     assert expected_parent_column in sql
 
 
@@ -1275,7 +1330,7 @@ async def test_document_search_resolves_every_supported_parent_scope(monkeypatch
 @pytest.mark.asyncio
 async def test_repository_invoice_count_is_tenant_scoped():
     db = AsyncMock(spec=AsyncSession)
-    db.scalar.return_value = 4
+    as_mock(db.scalar).return_value = 4
 
     result = await AIRepository().execute_search_plan(
         db,
@@ -1286,7 +1341,7 @@ async def test_repository_invoice_count_is_tenant_scoped():
         status="overdue",
     )
 
-    sql = str(db.scalar.await_args.args[0])
+    sql = str(require_await(db.scalar).args[0])
     assert "invoices.organization_id" in sql
     assert "invoices.status" in sql
     assert result == [{"count": 4}]
@@ -1295,7 +1350,7 @@ async def test_repository_invoice_count_is_tenant_scoped():
 @pytest.mark.asyncio
 async def test_repository_calendar_search_is_scoped_to_current_user():
     db = AsyncMock(spec=AsyncSession)
-    db.scalar.return_value = 2
+    as_mock(db.scalar).return_value = 2
 
     await AIRepository().execute_search_plan(
         db,
@@ -1305,7 +1360,7 @@ async def test_repository_calendar_search_is_scoped_to_current_user():
         intent="count",
     )
 
-    sql = str(db.scalar.await_args.args[0])
+    sql = str(require_await(db.scalar).args[0])
     assert "calendar_events.user_id" in sql
     assert "calendar_events.organization_id" not in sql
 
@@ -1313,7 +1368,7 @@ async def test_repository_calendar_search_is_scoped_to_current_user():
 @pytest.mark.asyncio
 async def test_sales_forecast_preserves_canonical_revenue_values():
     reports = AsyncMock()
-    reports.get_revenue_forecasting_report.return_value = {
+    as_mock(reports.get_revenue_forecasting_report).return_value = {
         "metrics": {
             "committed_revenue": 100000,
             "open_pipeline_amount": 500000,
@@ -1332,7 +1387,11 @@ async def test_sales_forecast_preserves_canonical_revenue_values():
         runtime=_runtime(analysis),
         report_service_instance=reports,
     )
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "reports:read", "deals:read"})
+    replace_attr(
+        service,
+        "_permission_keys",
+        AsyncMock(return_value={"ai:generate", "reports:read", "deals:read"}),
+    )
     db = AsyncMock(spec=AsyncSession)
     actor = _user()
 
@@ -1341,7 +1400,9 @@ async def test_sales_forecast_preserves_canonical_revenue_values():
     assert result["commit_revenue"] == 100000
     assert result["best_case_revenue"] == 600000
     assert result["at_risk_revenue"] == 100000
-    reports.get_revenue_forecasting_report.assert_awaited_once_with(db, current_user=actor)
+    as_async_mock(reports.get_revenue_forecasting_report).assert_awaited_once_with(
+        db, current_user=actor
+    )
 
 
 @pytest.mark.asyncio
@@ -1381,12 +1442,16 @@ async def test_sales_coach_hides_cross_tenant_user_before_ai_call():
     repository.get_user = AsyncMock(return_value=None)
     runtime = AsyncMock()
     service = AIDomainService(repository=repository, runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "users:read", "reports:read"})
+    replace_attr(
+        service,
+        "_permission_keys",
+        AsyncMock(return_value={"ai:generate", "users:read", "reports:read"}),
+    )
 
     with pytest.raises(NotFoundError):
         await service.coach_sales_rep(AsyncMock(spec=AsyncSession), "foreign-user", _user())
 
-    runtime.execute.assert_not_awaited()
+    as_async_mock(runtime.execute).assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1403,13 +1468,17 @@ async def test_sales_coach_uses_tenant_scoped_recorded_metrics():
         coaching_actions=["Record follow-up activity"],
     )
     service = AIDomainService(repository=repository, runtime=_runtime(output))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "users:read", "reports:read"})
+    replace_attr(
+        service,
+        "_permission_keys",
+        AsyncMock(return_value={"ai:generate", "users:read", "reports:read"}),
+    )
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.coach_sales_rep(db, "user-1", _user())
 
     assert result["strengths"] == ["Consistent wins"]
-    repository.get_rep_metrics.assert_awaited_once_with(
+    as_async_mock(repository.get_rep_metrics).assert_awaited_once_with(
         db,
         user_id="user-1",
         organization_id="org-1",
@@ -1421,7 +1490,9 @@ async def test_sales_coach_uses_tenant_scoped_recorded_metrics():
 @pytest.mark.asyncio
 async def test_follow_up_remains_approval_only():
     repository = _repository()
-    repository.get_lead.return_value = _lead(updated_at=datetime.now(UTC) - timedelta(days=31))
+    as_mock(repository.get_lead).return_value = _lead(
+        updated_at=datetime.now(UTC) - timedelta(days=31)
+    )
     output = FollowUpRecommendationResponse(
         entity_type="lead",
         entity_id="lead-1",
@@ -1429,7 +1500,7 @@ async def test_follow_up_remains_approval_only():
         recommendation="Send a concise check-in",
     )
     service = AIDomainService(repository=repository, runtime=_runtime(output))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "leads:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "leads:read"}))
 
     result = await service.recommend_follow_up(
         AsyncMock(spec=AsyncSession), "lead", "lead-1", _user()
@@ -1449,9 +1520,9 @@ async def test_data_cleaning_detects_duplicates_without_mutation():
         ]
     )
     runtime = AsyncMock()
-    runtime.start_local_run.return_value = SimpleNamespace(id="local-run-1")
+    as_mock(runtime.start_local_run).return_value = SimpleNamespace(id="local-run-1")
     service = AIDomainService(repository=repository, runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "leads:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "leads:read"}))
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.analyze_data_quality(
@@ -1460,8 +1531,8 @@ async def test_data_cleaning_detects_duplicates_without_mutation():
 
     assert result["destructive_changes_applied"] is False
     assert result["findings"][0]["duplicate_ids"] == ["lead-2"]
-    runtime.start_local_run.assert_awaited_once()
-    runtime.complete_local_run.assert_awaited_once()
+    as_async_mock(runtime.start_local_run).assert_awaited_once()
+    as_async_mock(runtime.complete_local_run).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -1480,20 +1551,22 @@ async def test_customer_360_only_loads_modules_the_caller_can_read():
         freshness="Current entity record",
     )
     service = AIDomainService(repository=repository, runtime=_runtime(output))
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "companies:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
     db = AsyncMock(spec=AsyncSession)
 
     result = await service.get_customer_360(db, "company", "company-1", _user())
 
     assert result["open_deal_value"] == 0
-    assert repository.get_customer_context.await_args.kwargs["include_deals"] is False
-    assert repository.get_customer_context.await_args.kwargs["include_calls"] is False
+    assert require_await(repository.get_customer_context).kwargs["include_deals"] is False
+    assert require_await(repository.get_customer_context).kwargs["include_calls"] is False
 
 
 @pytest.mark.asyncio
 async def test_churn_prediction_hides_cross_tenant_company():
     repository = _repository()
-    repository.get_company.return_value = None
+    as_mock(repository.get_company).return_value = None
     service = AIDomainService(repository=repository, runtime=AsyncMock())
 
     with pytest.raises(NotFoundError):
@@ -1503,7 +1576,7 @@ async def test_churn_prediction_hides_cross_tenant_company():
 @pytest.mark.asyncio
 async def test_pricing_intelligence_hides_cross_tenant_deal():
     repository = _repository()
-    repository.get_deal.return_value = None
+    as_mock(repository.get_deal).return_value = None
     service = AIDomainService(repository=repository, runtime=AsyncMock())
 
     with pytest.raises(NotFoundError):
@@ -1513,12 +1586,14 @@ async def test_pricing_intelligence_hides_cross_tenant_deal():
 @pytest.mark.asyncio
 async def test_transcription_uses_audited_provider_runtime():
     runtime = AsyncMock()
-    runtime.execute_transcription.return_value = (
+    as_mock(runtime.execute_transcription).return_value = (
         TranscriptionResponse(text="Customer approved next steps", language="en"),
         SimpleNamespace(id="run-audio-1"),
     )
     service = AIDomainService(repository=_repository(), runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "calls:recording"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "calls:recording"})
+    )
     db = AsyncMock(spec=AsyncSession)
     audio = b"audio bytes"
     actor = _user()
@@ -1534,7 +1609,7 @@ async def test_transcription_uses_audited_provider_runtime():
     assert result["text"] == "Customer approved next steps"
     assert result["run_id"] == "run-audio-1"
     assert result["transcript_id"] == "transcript-1"
-    runtime.execute_transcription.assert_awaited_once_with(
+    as_async_mock(runtime.execute_transcription).assert_awaited_once_with(
         db,
         current_user=actor,
         file_name="call.mp3",
@@ -1542,18 +1617,20 @@ async def test_transcription_uses_audited_provider_runtime():
         content_type="audio/mpeg",
     )
     repository = service.repository
-    repository.create_transcript.assert_awaited_once()
-    assert repository.create_transcript.await_args.kwargs["organization_id"] == "org-1"
+    as_async_mock(repository.create_transcript).assert_awaited_once()  # type: ignore[attr-defined]
+    assert require_await(repository.create_transcript).kwargs["organization_id"] == "org-1"  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
 async def test_transcription_rejects_cross_tenant_link_before_provider_call():
     repository = _repository()
-    repository.get_call.return_value = None
+    as_mock(repository.get_call).return_value = None
     runtime = AsyncMock()
     service = AIDomainService(repository=repository, runtime=runtime)
-    service._permission_keys = AsyncMock(
-        return_value={"ai:generate", "calls:read", "calls:recording"}
+    replace_attr(
+        service,
+        "_permission_keys",
+        AsyncMock(return_value={"ai:generate", "calls:read", "calls:recording"}),
     )
 
     with pytest.raises(NotFoundError):
@@ -1567,20 +1644,22 @@ async def test_transcription_rejects_cross_tenant_link_before_provider_call():
             source_id="foreign-call",
         )
 
-    runtime.execute_transcription.assert_not_awaited()
+    as_async_mock(runtime.execute_transcription).assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_transcript_search_limits_linked_sources_by_permissions():
     repository = _repository()
     service = AIDomainService(repository=repository, runtime=AsyncMock())
-    service._permission_keys = AsyncMock(return_value={"ai:read", "meetings:read"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:read", "meetings:read"}))
 
     await service.search_transcripts(AsyncMock(spec=AsyncSession), "pricing", _user())
 
-    assert repository.search_transcripts.await_args.kwargs["organization_id"] == "org-1"
-    assert repository.search_transcripts.await_args.kwargs["allowed_source_types"] == {"meeting"}
-    assert repository.search_transcripts.await_args.kwargs["allow_unlinked"] is False
+    assert require_await(repository.search_transcripts).kwargs["organization_id"] == "org-1"
+    assert require_await(repository.search_transcripts).kwargs["allowed_source_types"] == {
+        "meeting"
+    }
+    assert require_await(repository.search_transcripts).kwargs["allow_unlinked"] is False
 
 
 @pytest.mark.asyncio
@@ -1588,12 +1667,14 @@ async def test_meeting_transcription_does_not_require_call_recording_permission(
     repository = _repository()
     repository.get_meeting = AsyncMock(return_value=SimpleNamespace(id="meeting-1"))
     runtime = AsyncMock()
-    runtime.execute_transcription.return_value = (
+    as_mock(runtime.execute_transcription).return_value = (
         TranscriptionResponse(text="Meeting transcript"),
         SimpleNamespace(id="run-meeting-1"),
     )
     service = AIDomainService(repository=repository, runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate", "meetings:read"})
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "meetings:read"})
+    )
 
     await service.speech_to_text(
         AsyncMock(spec=AsyncSession),
@@ -1605,15 +1686,15 @@ async def test_meeting_transcription_does_not_require_call_recording_permission(
         source_id="meeting-1",
     )
 
-    repository.get_meeting.assert_awaited_once()
-    runtime.execute_transcription.assert_awaited_once()
+    as_async_mock(repository.get_meeting).assert_awaited_once()
+    as_async_mock(runtime.execute_transcription).assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_unlinked_transcription_requires_recording_permission():
     runtime = AsyncMock()
     service = AIDomainService(repository=_repository(), runtime=runtime)
-    service._permission_keys = AsyncMock(return_value={"ai:generate"})
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate"}))
 
     with pytest.raises(ForbiddenError):
         await service.speech_to_text(
@@ -1624,4 +1705,4 @@ async def test_unlinked_transcription_requires_recording_permission():
             current_user=_user(),
         )
 
-    runtime.execute_transcription.assert_not_awaited()
+    as_async_mock(runtime.execute_transcription).assert_not_awaited()

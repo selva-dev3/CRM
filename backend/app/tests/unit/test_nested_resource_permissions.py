@@ -1,4 +1,5 @@
 import inspect
+import typing
 
 import pytest
 from fastapi.routing import APIRoute
@@ -13,7 +14,9 @@ def _permissions(router, path: str, method: str) -> set[str]:
         if isinstance(item, APIRoute) and item.path == path and method in (item.methods or set())
     )
     return {
-        inspect.getclosurevars(dependency.dependency).nonlocals["permission"]
+        inspect.getclosurevars(
+            typing.cast(typing.Callable[..., typing.Any], dependency.dependency)
+        ).nonlocals["permission"]
         for dependency in route.dependencies
         if getattr(dependency.dependency, "__name__", "") == "permission_dependency"
     }

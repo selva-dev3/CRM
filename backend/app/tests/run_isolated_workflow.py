@@ -35,7 +35,10 @@ async def verify_startup() -> int:
     ):
         response = await client.get("/health")
         assert response.status_code == 200, response.text
-        assert response.json() == {"status": "ok", "database": "ok"}
+        assert response.json() == {
+            "status": "ok",
+            "checks": {"database": "ok", "redis": "ok"},
+        }
     assert not any(name == "stripe" or name.startswith("stripe.") for name in sys.modules)
     sys.stdout.write(
         json.dumps({"startup": "ok", "health": response.json(), "stripe_imports": "blocked"}) + "\n"

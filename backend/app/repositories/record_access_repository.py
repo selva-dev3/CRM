@@ -1,4 +1,5 @@
 from inspect import isawaitable
+from typing import Any
 
 from sqlalchemy import select, union
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +22,7 @@ class RecordAccessRepository:
         return value if isinstance(value, str) else None
 
     async def team_ids_for_user(self, db: AsyncSession, user_id: str) -> frozenset[str]:
-        rows = (
+        rows: Any = (
             await db.scalars(
                 union(
                     select(TeamMembership.team_id)
@@ -46,7 +47,7 @@ class RecordAccessRepository:
     ) -> frozenset[str]:
         if not team_ids:
             return frozenset()
-        rows = (
+        rows: Any = (
             await db.scalars(
                 union(
                     select(TeamMembership.user_id)

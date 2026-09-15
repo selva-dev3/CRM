@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import Any
 
 import httpx
 import pytest
@@ -60,13 +61,11 @@ def _integration(**overrides):
 
 @pytest.mark.asyncio
 async def test_integration_delivery_success_uses_stable_provider_idempotency_key(monkeypatch):
-    claim = _Session(
-        result=_Result(("org-1", "integration-1", "zapier", {"event": "x"}, 0))
-    )
+    claim = _Session(result=_Result(("org-1", "integration-1", "zapier", {"event": "x"}, 0)))
     integration = _integration()
     lookup = _Session(integration=integration)
     finalize = _Session(result=_Result(), integration=integration)
-    captured = {}
+    captured: dict[str, Any] = {}
 
     class _Response:
         status_code = 202
@@ -87,9 +86,7 @@ async def test_integration_delivery_success_uses_stable_provider_idempotency_key
 
     monkeypatch.setattr(httpx, "AsyncClient", lambda timeout: _Client())
 
-    result = await _deliver_one_integration_event(
-        _factory(claim, lookup, finalize), "delivery-1"
-    )
+    result = await _deliver_one_integration_event(_factory(claim, lookup, finalize), "delivery-1")
 
     assert result == "delivered"
     assert captured["headers"] == {"Idempotency-Key": "delivery-1"}
@@ -103,9 +100,7 @@ async def test_integration_delivery_success_uses_stable_provider_idempotency_key
 
 @pytest.mark.asyncio
 async def test_integration_delivery_failure_is_retried_without_false_success(monkeypatch):
-    claim = _Session(
-        result=_Result(("org-1", "integration-1", "slack", {"text": "x"}, 0))
-    )
+    claim = _Session(result=_Result(("org-1", "integration-1", "slack", {"text": "x"}, 0)))
     integration = _integration()
     lookup = _Session(integration=integration)
     release = _Session(result=_Result(), integration=integration)
@@ -122,9 +117,7 @@ async def test_integration_delivery_failure_is_retried_without_false_success(mon
 
     monkeypatch.setattr(httpx, "AsyncClient", lambda timeout: _Client())
 
-    result = await _deliver_one_integration_event(
-        _factory(claim, lookup, release), "delivery-1"
-    )
+    result = await _deliver_one_integration_event(_factory(claim, lookup, release), "delivery-1")
 
     assert result == "failed"
     assert integration.status == "syncing"
@@ -148,9 +141,7 @@ async def test_expired_processing_delivery_can_be_reclaimed():
 
 @pytest.mark.asyncio
 async def test_provider_success_does_not_overwrite_state_after_claim_is_lost(monkeypatch):
-    claim = _Session(
-        result=_Result(("org-1", "integration-1", "zapier", {"event": "x"}, 0))
-    )
+    claim = _Session(result=_Result(("org-1", "integration-1", "zapier", {"event": "x"}, 0)))
     integration = _integration()
     lookup = _Session(integration=integration)
     finalize = _Session(result=_Result(rowcount=0), integration=integration)
@@ -173,9 +164,7 @@ async def test_provider_success_does_not_overwrite_state_after_claim_is_lost(mon
 
     monkeypatch.setattr(httpx, "AsyncClient", lambda timeout: _Client())
 
-    result = await _deliver_one_integration_event(
-        _factory(claim, lookup, finalize), "delivery-1"
-    )
+    result = await _deliver_one_integration_event(_factory(claim, lookup, finalize), "delivery-1")
 
     assert result == "lost_claim"
     assert integration.status == "syncing"

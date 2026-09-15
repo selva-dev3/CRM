@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     JSON,
@@ -36,7 +37,7 @@ class Contact(Base):
     email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     phone: Mapped[str | None] = mapped_column(String(50))
     normalized_phone: Mapped[str | None] = mapped_column(String(16))
-    whatsapp_phone_verified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    whatsapp_phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     position: Mapped[str | None] = mapped_column(String(100))
     company_id: Mapped[str | None] = mapped_column(String, index=True)
     owner_id: Mapped[str | None] = mapped_column(
@@ -47,8 +48,8 @@ class Contact(Base):
     )
     is_starred: Mapped[bool] = mapped_column(Boolean, default=False)
     custom_fields: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), onupdate=func.now(), server_default=func.now()
     )
 

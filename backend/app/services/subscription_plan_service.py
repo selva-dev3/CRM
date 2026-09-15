@@ -4,12 +4,18 @@ from typing import Any
 from app.models import Organization, OrganizationSubscription, SubscriptionPlan
 
 FREE_PLAN_SLUG = "free"
+DEFAULT_FREE_PLAN_MAX_USERS = 3
+
+
+def normalized_max_users(plan: SubscriptionPlan) -> int:
+    """Return the persisted seat entitlement for a plan."""
+    return plan.max_users if plan.max_users is not None else DEFAULT_FREE_PLAN_MAX_USERS
 
 
 def apply_plan_to_organization(org: Organization, plan: SubscriptionPlan) -> None:
     """Apply only the plan identity and seat entitlement to an organization."""
     org.plan = plan.name
-    org.max_users = plan.max_users
+    org.max_users = normalized_max_users(plan)
 
 
 def free_subscription_data(
@@ -25,7 +31,7 @@ def free_subscription_data(
         "currency": plan.currency,
         "started_at": datetime.now(UTC),
         "auto_renew": False,
-        "max_users": plan.max_users,
+        "max_users": normalized_max_users(plan),
         "current_users": current_users,
         "storage_limit_gb": plan.max_storage_gb,
         "storage_used_gb": 0,

@@ -58,9 +58,7 @@ def _stub_access_context(monkeypatch):
 
 def test_parse_datetime_handles_iso_date_and_empty():
     assert parse_datetime("2026-08-01") == datetime(2026, 8, 1, tzinfo=UTC)
-    assert parse_datetime("2026-08-01T10:30:00") == datetime(
-        2026, 8, 1, 10, 30, tzinfo=UTC
-    )
+    assert parse_datetime("2026-08-01T10:30:00") == datetime(2026, 8, 1, 10, 30, tzinfo=UTC)
     assert parse_datetime("2026-08-01T10:30:00Z").tzinfo is not None
     with pytest.raises(APIException) as exc_info:
         parse_datetime("not-a-date")
@@ -188,9 +186,7 @@ async def test_rsvp_creates_missing_attendee():
     service = _service_with(repo)
     db = AsyncMock(spec=AsyncSession)
 
-    result = await service.rsvp(
-        db, "mtg-1", "a@crm.com", "accepted", "org-1", _actor()
-    )
+    result = await service.rsvp(db, "mtg-1", "a@crm.com", "accepted", "org-1", _actor())
 
     assert result["message"] == "RSVP 'accepted' recorded for a@crm.com"
     repo.create_attendee.assert_awaited_once()

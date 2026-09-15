@@ -446,9 +446,7 @@ class DealService:
         self, db: AsyncSession, *, organization_id: str, current_user: User | None = None
     ) -> dict:
         access = (
-            await record_access_service.resolve(db, current_user, "deals")
-            if current_user
-            else None
+            await record_access_service.resolve(db, current_user, "deals") if current_user else None
         )
         deals = await self.repository.list_all(
             db,
@@ -464,9 +462,7 @@ class DealService:
         self, db: AsyncSession, *, organization_id: str, current_user: User | None = None
     ) -> dict:
         access = (
-            await record_access_service.resolve(db, current_user, "deals")
-            if current_user
-            else None
+            await record_access_service.resolve(db, current_user, "deals") if current_user else None
         )
         deals = await self.repository.list_all(
             db,
@@ -513,9 +509,7 @@ class DealService:
         current_user: User | None = None,
     ) -> dict:
         access = (
-            await record_access_service.resolve(db, current_user, "deals")
-            if current_user
-            else None
+            await record_access_service.resolve(db, current_user, "deals") if current_user else None
         )
         deals = await self.repository.list_by_ids(
             db,
@@ -529,7 +523,13 @@ class DealService:
         return {"affected_count": len(deals), "message": "Deals deleted successfully"}
 
     async def bulk_update_stage(
-        self, db: AsyncSession, ids: list[str], stage: str, *, organization_id: str, actor_id: str,
+        self,
+        db: AsyncSession,
+        ids: list[str],
+        stage: str,
+        *,
+        organization_id: str,
+        actor_id: str,
         current_user: User | None = None,
     ) -> dict:
         try:
@@ -1156,7 +1156,10 @@ class DealService:
         )
 
     async def count_deal_quotes(
-        self, db: AsyncSession, deal_id: str, organization_id: str,
+        self,
+        db: AsyncSession,
+        deal_id: str,
+        organization_id: str,
         current_user: User | None = None,
     ) -> int:
         await self.require_deal(

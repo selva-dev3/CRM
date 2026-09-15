@@ -94,8 +94,7 @@ class CustomFieldService:
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     code="INVALID_CUSTOM_FIELD_VALUE",
                     message=(
-                        f"Invalid value for {canonical_entity.lower()} custom field "
-                        f"'{field_name}'"
+                        f"Invalid value for {canonical_entity.lower()} custom field '{field_name}'"
                     ),
                 )
         return values

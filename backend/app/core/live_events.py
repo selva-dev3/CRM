@@ -69,9 +69,7 @@ async def consume_live_events(
                 organization_id = data.pop("organization_id", None)
                 if isinstance(organization_id, str):
                     try:
-                        await callback(
-                            json.dumps(data, separators=(",", ":")), organization_id
-                        )
+                        await callback(json.dumps(data, separators=(",", ":")), organization_id)
                     except Exception:
                         # A failed socket fan-out must not terminate Redis consumption.
                         logger.exception("live_event_callback_failed")

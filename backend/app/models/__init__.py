@@ -60,6 +60,7 @@ from app.models.quote import Quote, QuoteItem
 from app.models.quote_delivery import QuoteDeliveryAttempt
 from app.models.rbac import Permission, Role, RolePermission, RoleRecordScope, UserRole
 from app.models.report import CustomReport, ReportExport, ScheduledReport
+from app.models.storage_reconciliation import StorageReconciliation
 from app.models.support import (
     KnowledgeArticle,
     Ticket,
@@ -106,6 +107,7 @@ __all__ = [
     "WhatsAppWebhookEvent",
     "OrganizationDeletion",
     "OrganizationFileCleanup",
+    "StorageReconciliation",
     "Payment",
     "SalesOrder",
     "SalesOrderItem",

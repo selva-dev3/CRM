@@ -144,10 +144,12 @@ class LeadRepository:
 
     async def has_activity(self, db: AsyncSession, lead_id: str, *, action: str) -> bool:
         result = await db.execute(
-            select(LeadActivity.id).where(
+            select(LeadActivity.id)
+            .where(
                 LeadActivity.lead_id == lead_id,
                 LeadActivity.action == action,
-            ).limit(1)
+            )
+            .limit(1)
         )
         return result.scalar_one_or_none() is not None
 

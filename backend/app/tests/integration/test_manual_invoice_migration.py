@@ -15,6 +15,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.core.config import settings
+
 
 @pytest.mark.asyncio
 async def test_manual_billing_migration_preserves_populated_financial_history(monkeypatch, caplog):
@@ -37,6 +39,7 @@ async def test_manual_billing_migration_preserves_populated_financial_history(mo
         return original_factory(configuration, **kwargs)
 
     monkeypatch.setattr(async_sqlalchemy, "async_engine_from_config", scoped_factory)
+    monkeypatch.setattr(settings, "DATABASE_URL", url)
     # Do not load the CLI logging configuration into pytest's shared process.
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).resolve().parents[3] / "alembic"))

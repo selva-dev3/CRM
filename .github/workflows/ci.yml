@@ -14,7 +14,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.12"
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
 
 jobs:
   backend:
@@ -43,25 +43,13 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
-      minio:
-        image: minio/minio:latest
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-        ports:
-          - 9000:9000
-        options: >-
-          --health-cmd="curl -f http://localhost:9000/minio/health/live || exit 1"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
     defaults:
       run:
         working-directory: backend
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/crm_test
-      CRM_WORKFLOW_TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/crm_test
-      SECRET_KEY: ci-only-secret-key
+      CRM_WORKFLOW_TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/crm_workflow_test
+      SECRET_KEY: ci-only-secret-key-with-at-least-32-bytes
       ENVIRONMENT: test
       REDIS_HOST: localhost
       REDIS_PORT: 6379
@@ -78,6 +66,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Start MinIO
+        run: |
+          docker run --detach --name crm-ci-minio \
+            --publish 9000:9000 \
+            --env MINIO_ROOT_USER=minioadmin \
+            --env MINIO_ROOT_PASSWORD=minioadmin \
+            quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
+            server /data
+          for attempt in {1..30}; do
+            if docker exec crm-ci-minio mc ready local; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs crm-ci-minio
+          exit 1
+
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -92,6 +97,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.lock
 
+      - name: Create isolated workflow database
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE crm_workflow_test"
+
       - name: Check formatting
         run: black --check app
 
@@ -102,6 +110,11 @@ jobs:
         run: mypy app
 
       - name: Validate migrations
+        run: alembic upgrade head
+
+      - name: Migrate isolated workflow database
+        env:
+          DATABASE_URL: ${{ env.CRM_WORKFLOW_TEST_DATABASE_URL }}
         run: alembic upgrade head
 
       - name: Test

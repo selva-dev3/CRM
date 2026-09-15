@@ -351,23 +351,17 @@ async def test_migrated_rbac_rejects_referenced_user_and_role_scope_changes(life
     user_id = accepted.json()["user"]["id"]
 
     async with sessions() as db:
-        role_id = await db.scalar(
-            select(UserRole.role_id).where(UserRole.user_id == user_id)
-        )
+        role_id = await db.scalar(select(UserRole.role_id).where(UserRole.user_id == user_id))
         with pytest.raises(DBAPIError):
             await db.execute(
-                update(User)
-                .where(User.id == user_id)
-                .values(organization_id=other["id"])
+                update(User).where(User.id == user_id).values(organization_id=other["id"])
             )
             await db.flush()
         await db.rollback()
 
         with pytest.raises(DBAPIError):
             await db.execute(
-                update(Role)
-                .where(Role.id == role_id)
-                .values(organization_id=other["id"])
+                update(Role).where(Role.id == role_id).values(organization_id=other["id"])
             )
             await db.flush()
         await db.rollback()
@@ -427,8 +421,7 @@ async def test_delete_preserves_platform_login_and_allows_zero_then_new_organiza
         assert (await db.get(User, platform_id))._organization_id is None
         assert await db.get(User, tenant_user_id) is None
         assert (
-            await db.scalar(select(UserRole.id).where(UserRole.user_id == tenant_user_id))
-            is None
+            await db.scalar(select(UserRole.id).where(UserRole.user_id == tenant_user_id)) is None
         )
         login = await AuthService().login(
             db, LoginRequest(email="superadmin@mycrm.com", password=password)
@@ -485,14 +478,9 @@ async def test_failed_deletion_rolls_back_dependencies_audit_and_manifest(lifecy
         assert await db.get(Organization, organization["id"])
         assert await db.scalar(select(func.count()).select_from(OrganizationDeletion)) == 0
         assert await db.scalar(select(func.count()).select_from(OrganizationFileCleanup)) == 0
-        assert (
-            await db.scalar(
-                select(func.count())
-                .select_from(Role)
-                .where(Role.organization_id == organization["id"])
-            )
-            == len(SYSTEM_ROLE_PERMISSIONS)
-        )
+        assert await db.scalar(
+            select(func.count()).select_from(Role).where(Role.organization_id == organization["id"])
+        ) == len(SYSTEM_ROLE_PERMISSIONS)
 
 
 @pytest.mark.asyncio
@@ -611,7 +599,7 @@ async def test_populated_crm_deletion_revokes_tenant_session_and_preserves_other
     deleted_keys = []
     monkeypatch.setattr(
         "app.services.organization_cleanup_service.s3_service.delete_file",
-        lambda key: deleted_keys.append(key) or True,
+        lambda key: deleted_keys.append(key) or True,  # type: ignore[func-returns-value]
     )
     async with sessions() as db:
         assert await db.get(User, user_id) is None
@@ -753,6 +741,7 @@ async def test_migration_aborts_on_existing_duplicate_names_without_rewriting(li
         / "alembic/versions/s2b3c4d5e6f7_organization_lifecycle.py"
     )
     spec = importlib.util.spec_from_file_location("lifecycle_migration_test", path)
+    assert spec is not None and spec.loader is not None
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
     async with sessions() as db:
@@ -1118,7 +1107,7 @@ async def test_online_prefix_inventory_is_bounded_before_storage_calls(lifecycle
     calls = []
     monkeypatch.setattr(
         "app.services.organization_lifecycle_service.s3_service.list_file_keys",
-        lambda prefix, limit, known_keys=None: calls.append(prefix) or [],
+        lambda prefix, limit, known_keys=None: calls.append(prefix) or [],  # type: ignore[func-returns-value]
     )
     response = await client.delete(f"/organizations/{organization['id']}")
     assert (

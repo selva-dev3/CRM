@@ -85,9 +85,12 @@ class Settings(BaseSettings):
         missing = [name for name, value in required.items() if not value]
         if missing:
             raise ValueError(f"WhatsApp configuration is incomplete: {', '.join(missing)}")
-        if not self.WHATSAPP_PUBLIC_WEBHOOK_URL.startswith("https://"):
+        public_webhook_url = self.WHATSAPP_PUBLIC_WEBHOOK_URL
+        if public_webhook_url is None:
+            raise ValueError("WHATSAPP_PUBLIC_WEBHOOK_URL is required")
+        if not public_webhook_url.startswith("https://"):
             raise ValueError("WHATSAPP_PUBLIC_WEBHOOK_URL must use HTTPS")
-        webhook_url = urlparse(self.WHATSAPP_PUBLIC_WEBHOOK_URL)
+        webhook_url = urlparse(public_webhook_url)
         expected_path = f"{self.API_V1_STR}/whatsapp/webhook"
         if (
             webhook_url.path.rstrip("/") != expected_path

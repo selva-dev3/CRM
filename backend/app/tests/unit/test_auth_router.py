@@ -62,7 +62,7 @@ async def test_login_sets_access_and_refresh_cookies_and_returns_access_token(mo
         cookie for cookie in cookies if cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=")
     )
     assert "Max-Age=" not in access_cookie
-    assert result["access_token"] == "access-token"
+    assert result["access_token"] == "access-token"  # noqa: S105 - test fixture value
     assert "refresh_token" not in result
 
 
@@ -81,7 +81,7 @@ async def test_refresh_reads_cookie_rotates_both_cookies_and_returns_access_toke
     cookies = response.headers.getlist("set-cookie")
     assert any(cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=") for cookie in cookies)
     assert any(cookie.startswith(f"{settings.AUTH_REFRESH_COOKIE_NAME}=") for cookie in cookies)
-    assert result["access_token"] == "access-token"
+    assert result["access_token"] == "access-token"  # noqa: S105 - test fixture value
     assert "refresh_token" not in result
 
 
@@ -90,9 +90,7 @@ async def test_refresh_rejects_missing_cookie(monkeypatch):
     refresh_mock = AsyncMock()
     monkeypatch.setattr(auth_router.auth_service, "refresh_token", refresh_mock)
 
-    response = await auth_router.refresh_token(
-        _request(), Response(), AsyncMock(spec=AsyncSession)
-    )
+    response = await auth_router.refresh_token(_request(), Response(), AsyncMock(spec=AsyncSession))
 
     assert response.status_code == 401
     assert response.body == (
@@ -171,7 +169,7 @@ async def test_accept_invitation_sets_access_and_refresh_cookies(monkeypatch):
     cookies = response.headers.getlist("set-cookie")
     assert any(cookie.startswith(f"{settings.AUTH_COOKIE_NAME}=") for cookie in cookies)
     assert any(cookie.startswith(f"{settings.AUTH_REFRESH_COOKIE_NAME}=") for cookie in cookies)
-    assert response_body["access_token"] == "access-token"
+    assert response_body["access_token"] == "access-token"  # noqa: S105 - test fixture value
     assert "refresh_token" not in response_body
     assert len(background_tasks.tasks) == 1
     task = background_tasks.tasks[0]

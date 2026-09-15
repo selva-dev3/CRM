@@ -74,6 +74,25 @@ def test_free_subscription_copies_entitlements_from_database_plan_without_provid
     assert subscription.auto_renew is False
 
 
+def test_free_subscription_normalizes_missing_seat_entitlement_consistently():
+    plan = SubscriptionPlan(
+        id="custom-free",
+        name="Community",
+        slug="free",
+        price_monthly=0,
+        max_users=None,
+    )
+    organization = Organization(id="org-1", name="Acme")
+
+    apply_plan_to_organization(organization, plan)
+    subscription = build_free_subscription(
+        organization_id=organization.id, plan=plan, current_users=1
+    )
+
+    assert organization.max_users == 3
+    assert subscription.max_users == organization.max_users
+
+
 def test_plan_catalog_fields_and_one_subscription_constraint_are_modeled():
     columns = SubscriptionPlan.__table__.c
     for field in (
@@ -87,7 +106,7 @@ def test_plan_catalog_fields_and_one_subscription_constraint_are_modeled():
     assert any(
         isinstance(constraint, sa.UniqueConstraint)
         and tuple(column.name for column in constraint.columns) == ("organization_id",)
-        for constraint in OrganizationSubscription.__table__.constraints
+        for constraint in OrganizationSubscription.__table__.constraints  # type: ignore[attr-defined]
     )
 
 

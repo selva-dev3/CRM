@@ -227,6 +227,7 @@ def canonical_system_role_name(value: str) -> str | None:
             return canonical
     return None
 
+
 # Record visibility is independent from action permissions.  Keep the policy in
 # the same canonical matrix so tenant provisioning and data migrations cannot
 # silently disagree.  Modules without an action grant are deliberately scoped

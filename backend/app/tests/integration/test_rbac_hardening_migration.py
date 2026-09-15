@@ -39,10 +39,12 @@ async def test_migration_remaps_exact_ordered_defaults_and_preserves_platform_ro
         async with engine.begin() as connection:
             # Historical migrations seed these global templates. Replace them
             # only in this disposable fixture with deterministic IDs below.
-            await connection.execute(text(
-                "DELETE FROM roles WHERE organization_id IS NULL "
-                "AND name IN ('Admin', 'Sales Manager', 'Super Admin')"
-            ))
+            await connection.execute(
+                text(
+                    "DELETE FROM roles WHERE organization_id IS NULL "
+                    "AND name IN ('Admin', 'Sales Manager', 'Super Admin')"
+                )
+            )
             await connection.execute(
                 text(
                     "INSERT INTO organizations (id,name,is_active,status) VALUES "
@@ -80,7 +82,11 @@ async def test_migration_remaps_exact_ordered_defaults_and_preserves_platform_ro
                     "('empty','default_registration_roles:org-2','[]'),"
                     "('single','default_registration_role:org-1','role-10')"
                 ),
-                {"default_roles": json.dumps([" role-10 ", "role-1", "role-100", None, 7, {"legacy": True}])},
+                {
+                    "default_roles": json.dumps(
+                        [" role-10 ", "role-1", "role-100", None, 7, {"legacy": True}]
+                    )
+                },
             )
 
         await asyncio.to_thread(command.upgrade, config, "head")
@@ -95,7 +101,12 @@ async def test_migration_remaps_exact_ordered_defaults_and_preserves_platform_ro
                 text("SELECT role FROM users WHERE id='platform'")
             )
         assert json.loads(defaults) == [
-            "local-manager", "local-admin", "role-100", None, 7, {"legacy": True}
+            "local-manager",
+            "local-admin",
+            "role-100",
+            None,
+            7,
+            {"legacy": True},
         ]
         assert json.loads(empty) == []
         assert single == "local-manager"
