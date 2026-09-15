@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
+from app.core.permissions import effective_organization_id
 from app.core.rbac_matrix import RECORD_SCOPE_MODULES
 from app.core.record_access import RecordAccessContext
 from app.models import User
@@ -55,7 +56,7 @@ from app.schemas.ai import (
     TranscriptionResponse,
 )
 from app.schemas.crm_schemas import TaskCreate
-from app.schemas.dashboard import DashboardAiInsightsResponse
+from app.schemas.dashboard import DashboardAiInsightsResponse, RiskDealInsight
 from app.services.ai_provider_service import ai_provider_gateway
 from app.services.ai_runtime_service import AIRuntimeService, ai_runtime_service
 from app.services.auth_service import auth_service
@@ -881,7 +882,7 @@ class AIDomainService:
         )
         await self.repository.create_generated_content(
             db,
-            organization_id=current_user.organization_id or "",
+            organization_id=effective_organization_id(current_user) or "",
             user_id=current_user.id,
             content_type=f"{feature}:{entity_id or run.id}",
             generated_text=output.model_dump_json(),
@@ -1965,15 +1966,27 @@ class AIDomainService:
             output_schema=DashboardAiInsightsResponse,
         )
         result = DashboardAiInsightsResponse.model_validate(output)
-        allowed_deal_ids = {
-            item["id"]
+        authorized_deals = {
+            str(item["id"]): item
             for item in context.get("deals", [])
             if isinstance(item, dict) and item.get("id")
         }
         result.insights = [
             item
             for item in result.insights
-            if item.deal_id is None or item.deal_id in allowed_deal_ids
+            if item.deal_id is None or item.deal_id in authorized_deals
+        ]
+        result.risk_deals = [
+            RiskDealInsight(
+                id=risk.id,
+                title=str(authorized_deals[risk.id]["title"]),
+                amount=authorized_deals[risk.id].get("amount"),
+                stage=str(authorized_deals[risk.id]["stage"]),
+                probability=authorized_deals[risk.id].get("probability"),
+                updated_at=str(authorized_deals[risk.id]["updated_at"]),
+            )
+            for risk in result.risk_deals
+            if risk.id in authorized_deals
         ]
         result.run_id = run.id
         return result.model_dump()

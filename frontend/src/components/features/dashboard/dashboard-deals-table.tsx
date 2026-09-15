@@ -1,0 +1,21 @@
+'use client';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { ArrowUpRight, BriefcaseBusiness } from 'lucide-react';
+import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { Button, Card, CardDescription, CardHeader, CardTitle } from '@/components/ui';
+import type { RecentDealItem } from '@/lib/api/dashboard';
+
+export function DashboardDealsTable({ deals, isLoading, isError, onRetry, formatCurrency }: { deals: RecentDealItem[]; isLoading: boolean; isError: boolean; onRetry: () => void; formatCurrency: (value: number) => string }) {
+  const [search, setSearch] = useState(''); const [stage, setStage] = useState('all'); const [sort, setSort] = useState('updated');
+  const stages = useMemo(() => Array.from(new Set(deals.map((deal) => deal.stage).filter(Boolean))) as string[], [deals]);
+  const filtered = useMemo(() => { const term = search.trim().toLowerCase(); const result = deals.filter((deal) => (!term || deal.title.toLowerCase().includes(term) || deal.owner?.toLowerCase().includes(term)) && (stage === 'all' || deal.stage === stage)); return [...result].sort((a, b) => sort === 'amount-desc' ? b.amount - a.amount : sort === 'amount-asc' ? a.amount - b.amount : b.updated_at.localeCompare(a.updated_at)); }, [deals, search, sort, stage]);
+  const columns = useMemo<readonly DataTableColumn<RecentDealItem>[]>(() => [
+    { id: 'title', header: 'Deal', cell: (deal) => <Link href={`/deals/${deal.deal_id}`} className="font-semibold text-slate-900 hover:text-blue-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">{deal.title}</Link> },
+    { id: 'owner', header: 'Owner', cell: (deal) => <span className="text-slate-600">{deal.owner || 'Unassigned'}</span> },
+    { id: 'amount', header: 'Amount', cell: (deal) => <span className="font-semibold text-slate-900 tabular-nums">{formatCurrency(deal.amount)}</span> },
+    { id: 'stage', header: 'Stage', cell: (deal) => <span className="inline-flex rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700">{deal.stage || 'Prospecting'}</span> },
+    { id: 'updated', header: 'Last updated', cell: (deal) => <time dateTime={deal.updated_at} className="whitespace-nowrap text-slate-500">{new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(deal.updated_at))}</time> },
+  ], [formatCurrency]);
+  return <Card className="overflow-hidden shadow-none"><CardHeader className="flex-row items-center justify-between gap-4 border-b border-slate-100 p-4 sm:p-5"><div><CardTitle className="flex items-center gap-2 text-base"><BriefcaseBusiness className="size-4 text-blue-600" />Recent deals</CardTitle><CardDescription className="mt-1 text-xs">Recently updated opportunities in the selected period</CardDescription></div><Button asChild size="sm" variant="outline"><Link href="/deals">View all <ArrowUpRight className="ml-1 size-3.5" /></Link></Button></CardHeader>{isError ? <div role="alert" className="flex min-h-40 flex-col items-center justify-center gap-3 p-5 text-center"><p className="text-sm font-medium text-slate-700">Recent deals could not be loaded.</p><Button size="sm" variant="outline" onClick={onRetry}>Try again</Button></div> : <DataTable columns={columns} data={filtered} getRowKey={(deal) => deal.deal_id} emptyTitle="No deals found" emptyDescription={search || stage !== 'all' ? 'Try changing your search or stage filter.' : 'No deals were updated in this period.'} searchValue={search} onSearchChange={setSearch} searchPlaceholder="Search deals or owners..." statusFilter={{ value: stage, options: [{ label: 'All stages', value: 'all' }, ...stages.map((value) => ({ label: value, value }))], onChange: setStage }} sortOptions={{ value: sort, options: [{ label: 'Recently updated', value: 'updated' }, { label: 'Amount: high to low', value: 'amount-desc' }, { label: 'Amount: low to high', value: 'amount-asc' }], onChange: setSort }} hasActiveFilters={Boolean(search) || stage !== 'all'} onClearFilters={() => { setSearch(''); setStage('all'); }} pagination={{ pageSize: 5 }} isLoading={isLoading} loadingLabel="Loading recent deals" tableClassName="min-w-[720px]" transparent />}</Card>;
+}

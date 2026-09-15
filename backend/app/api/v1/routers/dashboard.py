@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, require_permission
-from app.core.errors import ForbiddenError
+from app.core.errors import APIException, ForbiddenError
 from app.core.permissions import effective_organization_id
 from app.db.session import get_db
 from app.models import User
@@ -20,7 +20,6 @@ from app.schemas.dashboard import (
     RecentDealResponse,
     RevenueChartResponse,
     TopPerformerResponse,
-    UnavailableMetricResponse,
 )
 from app.services.dashboard_service import dashboard_service
 
@@ -32,6 +31,21 @@ def _organization_id(user: User) -> str:
     if not organization_id:
         raise ForbiddenError(message="Authenticated organization context is required")
     return organization_id
+
+
+def _validate_date_range(start_at: datetime | None, end_at: datetime | None) -> None:
+    if (start_at is None) != (end_at is None):
+        raise APIException(
+            status_code=422,
+            code="INVALID_DATE_RANGE",
+            message="start_at and end_at must be provided together",
+        )
+    if start_at and end_at and start_at >= end_at:
+        raise APIException(
+            status_code=422,
+            code="INVALID_DATE_RANGE",
+            message="start_at must be earlier than end_at",
+        )
 
 
 @router.get(
@@ -46,14 +60,7 @@ async def get_dashboard_kpis(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if start_at and end_at and start_at >= end_at:
-        from app.core.errors import APIException
-
-        raise APIException(
-            status_code=422,
-            code="INVALID_DATE_RANGE",
-            message="start_at must be earlier than end_at",
-        )
+    _validate_date_range(start_at, end_at)
     return await dashboard_service.get_kpis(
         db,
         _organization_id(current_user),
@@ -80,19 +87,23 @@ async def get_sales_funnel(
 @router.get(
     "/revenue-chart",
     response_model=RevenueChartResponse,
-    responses={
-        501: {
-            "model": UnavailableMetricResponse,
-            "description": "Required source data is not recorded",
-        }
-    },
-    summary="Get monthly revenue vs target comparison",
+    summary="Get monthly closed-won revenue",
     dependencies=[Depends(require_permission("dashboard:read"))],
 )
 async def get_revenue_chart(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    start_at: datetime = Query(...),
+    end_at: datetime = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    return await dashboard_service.get_revenue_chart(db, _organization_id(current_user))
+    _validate_date_range(start_at, end_at)
+    return await dashboard_service.get_revenue_chart(
+        db,
+        _organization_id(current_user),
+        start_at=start_at,
+        end_at=end_at,
+        current_user=current_user,
+    )
 
 
 @router.get(
@@ -102,10 +113,14 @@ async def get_revenue_chart(
     dependencies=[Depends(require_permission("dashboard:read"))],
 )
 async def get_top_performers(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    start_at: datetime | None = Query(None),
+    end_at: datetime | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    _validate_date_range(start_at, end_at)
     return await dashboard_service.get_top_performers(
-        db, _organization_id(current_user), current_user
+        db, _organization_id(current_user), current_user, start_at=start_at, end_at=end_at
     )
 
 
@@ -116,10 +131,14 @@ async def get_top_performers(
     dependencies=[Depends(require_permission("dashboard:read"))],
 )
 async def get_lead_conversions(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    start_at: datetime | None = Query(None),
+    end_at: datetime | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    _validate_date_range(start_at, end_at)
     return await dashboard_service.get_lead_conversions(
-        db, _organization_id(current_user), current_user
+        db, _organization_id(current_user), current_user, start_at=start_at, end_at=end_at
     )
 
 
@@ -130,10 +149,14 @@ async def get_lead_conversions(
     dependencies=[Depends(require_permission("dashboard:read"))],
 )
 async def get_activities_summary(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    start_at: datetime | None = Query(None),
+    end_at: datetime | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    _validate_date_range(start_at, end_at)
     return await dashboard_service.get_activities_summary(
-        db, _organization_id(current_user), current_user
+        db, _organization_id(current_user), current_user, start_at=start_at, end_at=end_at
     )
 
 
@@ -144,10 +167,14 @@ async def get_activities_summary(
     dependencies=[Depends(require_permission("dashboard:read"))],
 )
 async def get_recent_deals(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
+    start_at: datetime | None = Query(None),
+    end_at: datetime | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    _validate_date_range(start_at, end_at)
     return await dashboard_service.get_recent_deals(
-        db, _organization_id(current_user), current_user
+        db, _organization_id(current_user), current_user, start_at=start_at, end_at=end_at
     )
 
 
@@ -158,12 +185,13 @@ async def get_recent_deals(
     dependencies=[
         Depends(require_permission("dashboard:read")),
         Depends(require_permission("ai:generate")),
+        Depends(require_permission("deals:read")),
     ],
 )
 async def get_dashboard_ai_insights(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    return await dashboard_service.get_ai_insights(db, current_user)
+    return await dashboard_service.get_ai_insights(db, _organization_id(current_user), current_user)
 
 
 @router.get(

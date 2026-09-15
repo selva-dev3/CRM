@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError
 from app.core.logging import get_logger
+from app.core.permissions import effective_organization_id
 from app.models import AIOrganizationConfig, AIRun, User
 from app.repositories.ai_repository import AIRepository
 from app.schemas.ai import TranscriptionResponse
@@ -108,7 +109,7 @@ class AIRuntimeService:
         model_override: str | None = None,
         model_overrides: dict[str, str] | None = None,
     ) -> AIRun:
-        organization_id = current_user.organization_id
+        organization_id = effective_organization_id(current_user)
         if not organization_id:
             raise ForbiddenError(message="An organization is required to use AI features.")
 

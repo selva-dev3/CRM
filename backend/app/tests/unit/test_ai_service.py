@@ -1423,17 +1423,75 @@ async def test_dashboard_insights_drop_hallucinated_deal_identifiers():
                 "deal_id": "foreign-deal",
             },
         ],
-        risk_deals=[],
+        risk_deals=[
+            {
+                "id": "deal-1",
+                "title": "Untrusted title",
+                "amount": 1,
+                "stage": "Untrusted stage",
+                "probability": 1,
+                "updated_at": "1900-01-01",
+            },
+            {
+                "id": "foreign-deal",
+                "title": "Restricted deal",
+                "amount": 999999,
+                "stage": "Negotiation",
+                "probability": 99,
+                "updated_at": "2026-09-15",
+            },
+        ],
     )
     service = AIDomainService(repository=_repository(), runtime=_runtime(output))
 
     result = await service.generate_dashboard_insights(
         AsyncMock(spec=AsyncSession),
-        {"deals": [{"id": "deal-1", "title": "Authorized"}]},
+        {
+            "deals": [
+                {
+                    "id": "deal-1",
+                    "title": "Authorized",
+                    "amount": 5000,
+                    "stage": "Proposal",
+                    "probability": 60,
+                    "updated_at": "2026-09-14",
+                }
+            ]
+        },
         _user(),
     )
 
     assert [item["deal_id"] for item in result["insights"]] == ["deal-1"]
+    assert result["risk_deals"] == [
+        {
+            "id": "deal-1",
+            "title": "Authorized",
+            "amount": 5000.0,
+            "stage": "Proposal",
+            "probability": 60.0,
+            "updated_at": "2026-09-14",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_dashboard_insights_persist_under_platform_admin_selected_organization():
+    repository = _repository()
+    output = DashboardAiInsightsResponse(summary="Pipeline summary", insights=[], risk_deals=[])
+    service = AIDomainService(repository=repository, runtime=_runtime(output))
+    actor = _user(organization_id=None, is_platform_admin=True)
+    actor._request_organization_id = "selected-org"
+
+    await service.generate_dashboard_insights(
+        AsyncMock(spec=AsyncSession),
+        {"deals": []},
+        actor,
+    )
+
+    assert (
+        require_await(repository.create_generated_content).kwargs["organization_id"]
+        == "selected-org"
+    )
 
 
 @pytest.mark.asyncio

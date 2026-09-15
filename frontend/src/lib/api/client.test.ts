@@ -4,8 +4,10 @@ import {
   API_REQUEST_TIMEOUT_MS,
   apiClient,
   BASE_URL,
+  captureAuthSessionGeneration,
   clearSessionToken,
   invalidateAuthSession,
+  isAuthSessionGenerationCurrent,
   markAuthSessionActive,
   openApiStream,
   resolveApiBaseUrl,
@@ -505,6 +507,16 @@ describe('apiClient cookie authentication', () => {
     });
 
     await expect(oldRequest).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('invalidates captured mutation ownership across logout and same-user login', () => {
+    const oldGeneration = captureAuthSessionGeneration();
+    expect(isAuthSessionGenerationCurrent(oldGeneration)).toBe(true);
+
+    invalidateAuthSession();
+    expect(isAuthSessionGenerationCurrent(oldGeneration)).toBe(false);
+    markAuthSessionActive();
+    expect(isAuthSessionGenerationCurrent(oldGeneration)).toBe(false);
   });
 
   it('blocks new refresh attempts while explicit logout is in progress', async () => {

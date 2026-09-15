@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -8,6 +9,25 @@ class RecentActivityResponse(BaseModel):
     title: str
     user: str
     timestamp: str
+
+
+class MetricComparison(BaseModel):
+    previous_value: float = Field(ge=0)
+    change_percentage: float | None = None
+
+
+class DashboardKPIComparisons(BaseModel):
+    total_leads: MetricComparison
+    deals_won_amount: MetricComparison
+    won_deals_count: MetricComparison
+    win_rate_percentage: MetricComparison
+    quote_value: MetricComparison
+    revenue: MetricComparison
+
+
+class DashboardPeriod(BaseModel):
+    start_at: datetime
+    end_at: datetime
 
 
 class DashboardKPIs(BaseModel):
@@ -34,6 +54,8 @@ class DashboardKPIs(BaseModel):
     currency: str = Field(min_length=3, max_length=3)
     locale: str = Field(min_length=2, max_length=20)
     recent_activity: list[RecentActivityResponse]
+    period: DashboardPeriod | None = None
+    comparisons: DashboardKPIComparisons | None = None
 
 
 class FunnelStageResponse(BaseModel):
@@ -46,12 +68,6 @@ class RevenueChartResponse(BaseModel):
     months: list[str]
     actual: list[float]
     target: list[float]
-
-
-class UnavailableMetricResponse(BaseModel):
-    code: Literal["METRIC_UNAVAILABLE"]
-    message: str
-    fields: None = None
 
 
 class TopPerformerResponse(BaseModel):

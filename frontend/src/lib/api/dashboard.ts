@@ -1,226 +1,89 @@
-﻿import { useQuery, useMutation, UseQueryOptions } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api/client';
-import {
-  dashboardKpisSchema,
-  type DashboardKpisDto,
-} from '@/lib/validators/dashboard';
+import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
+import { z } from 'zod';
+
+import { apiClient, captureAuthSessionGeneration, isAuthSessionGenerationCurrent, type AuthSessionGeneration } from '@/lib/api/client';
+import { activitiesSummarySchema, customWidgetSchema, dashboardAiInsightsSchema, dashboardKpisSchema, funnelStageSchema, leadConversionSchema, recentDealSchema, revenueChartSchema, topPerformerSchema, type DashboardKpisDto } from '@/lib/validators/dashboard';
 
 export type DashboardKPIs = DashboardKpisDto;
+export type FunnelStageItem = z.infer<typeof funnelStageSchema>;
+export type RevenueChart = z.infer<typeof revenueChartSchema>;
+export type TopPerformerItem = z.infer<typeof topPerformerSchema>;
+export type LeadConversionItem = z.infer<typeof leadConversionSchema>;
+export type ActivitiesSummary = z.infer<typeof activitiesSummarySchema>;
+export type RecentDealItem = z.infer<typeof recentDealSchema>;
+export type DashboardAiInsights = z.infer<typeof dashboardAiInsightsSchema>;
+export type CustomWidget = z.infer<typeof customWidgetSchema>;
+export interface DashboardDateRange { startAt: string; endAt: string }
+export interface MessageResponse { message: string; status: string }
 
 export const DEFAULT_DASHBOARD_CURRENCY = 'INR';
 export const DEFAULT_DASHBOARD_LOCALE = 'en-IN';
+export const dashboardQueryKeys = {
+  all: ['dashboard'] as const,
+  kpis: (range?: DashboardDateRange) => [...dashboardQueryKeys.all, 'kpis', range] as const,
+  funnel: () => [...dashboardQueryKeys.all, 'sales-funnel'] as const,
+  revenue: (range: DashboardDateRange) => [...dashboardQueryKeys.all, 'revenue', range] as const,
+  performers: (range?: DashboardDateRange) => [...dashboardQueryKeys.all, 'top-performers', range] as const,
+  conversions: (range?: DashboardDateRange) => [...dashboardQueryKeys.all, 'lead-conversions', range] as const,
+  activities: (range?: DashboardDateRange) => [...dashboardQueryKeys.all, 'activities-summary', range] as const,
+  deals: (range?: DashboardDateRange) => [...dashboardQueryKeys.all, 'recent-deals', range] as const,
+  insights: () => [...dashboardQueryKeys.all, 'ai-insights'] as const,
+  widgets: () => [...dashboardQueryKeys.all, 'custom-widgets'] as const,
+};
 
-export interface FunnelStageItem {
-  stage: string;
-  count: number;
-  value: number;
+function withRange(path: string, range?: DashboardDateRange): string {
+  if (!range) return path;
+  return `${path}?${new URLSearchParams({ start_at: range.startAt, end_at: range.endAt })}`;
 }
-
-export interface TopPerformerItem {
-  name: string;
-  deals_count: number;
-  revenue: number;
-  avatar?: string;
-}
-
-export interface LeadConversionItem {
-  source: string;
-  leads: number;
-  converted: number;
-  rate: number;
-}
-
-export interface ActivitiesSummary {
-  calls_completed: number;
-  emails_sent: number;
-  meetings_held: number;
-  tasks_completed: number;
-  period_label: string;
-}
-
-export interface RecentDealItem {
-  deal_id: string;
-  title: string;
-  amount: number;
-  stage?: string;
-  owner?: string;
-  updated_at: string;
-}
-
-export interface AiInsightItem {
-  title: string;
-  description: string;
-  type: 'high' | 'warning' | 'info';
-  action?: string;
-  deal_id?: string;
-}
-
-export interface DashboardAiInsights {
-  summary: string;
-  insights?: AiInsightItem[];
-  risk_deals?: unknown[];
-}
-
-export interface CustomWidget {
-  id: string;
-  title: string;
-  enabled: boolean;
-}
-
-export interface MessageResponse {
-  message: string;
-  status: string;
-}
-
-export function parseDashboardKpis(value: unknown): DashboardKPIs {
-  const result = dashboardKpisSchema.safeParse(value);
-  if (!result.success) {
-    const metadataIssuePaths = new Set(
-      result.error.issues
-        .map((issue) => issue.path[0])
-        .filter((path) => path === 'currency' || path === 'locale'),
-    );
-    const hasOtherIssue = result.error.issues.some(
-      (issue) => issue.path[0] !== 'currency' && issue.path[0] !== 'locale',
-    );
-
-    if (metadataIssuePaths.size > 0 && !hasOtherIssue && value && typeof value === 'object') {
-      const normalizedValue = {
-        ...value,
-        ...(metadataIssuePaths.has('currency') && {
-          currency: DEFAULT_DASHBOARD_CURRENCY,
-        }),
-        ...(metadataIssuePaths.has('locale') && {
-          locale: DEFAULT_DASHBOARD_LOCALE,
-        }),
-      };
-      const normalizedResult = dashboardKpisSchema.safeParse(normalizedValue);
-      if (normalizedResult.success) return normalizedResult.data;
-      throw new Error('Dashboard KPI response has invalid currency metadata.');
-    }
-    throw new Error('Dashboard KPI response is invalid.');
-  }
+function parse<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
+  const result = schema.safeParse(value);
+  if (!result.success) throw new Error(`${label} response is invalid.`);
   return result.data;
 }
-
-// ---------------------------------------------------------------------------
-// API Client Functions
-// ---------------------------------------------------------------------------
-
-export async function fetchDashboardKpisApi(): Promise<DashboardKPIs> {
-  return parseDashboardKpis(await apiClient.get<unknown>('/dashboard/kpis'));
+export function parseDashboardKpis(value: unknown): DashboardKPIs {
+  const result = dashboardKpisSchema.safeParse(value);
+  if (result.success) return result.data;
+  const metadataIssues = new Set(result.error.issues.map((issue) => issue.path[0]).filter((path) => path === 'currency' || path === 'locale'));
+  const hasOtherIssue = result.error.issues.some((issue) => issue.path[0] !== 'currency' && issue.path[0] !== 'locale');
+  if (metadataIssues.size && !hasOtherIssue && value && typeof value === 'object') {
+    const normalized = { ...value, ...(metadataIssues.has('currency') && { currency: DEFAULT_DASHBOARD_CURRENCY }), ...(metadataIssues.has('locale') && { locale: DEFAULT_DASHBOARD_LOCALE }) };
+    const retry = dashboardKpisSchema.safeParse(normalized);
+    if (retry.success) return retry.data;
+    throw new Error('Dashboard KPI response has invalid currency metadata.');
+  }
+  throw new Error('Dashboard KPI response is invalid.');
 }
 
-export async function fetchSalesFunnelApi(): Promise<FunnelStageItem[]> {
-  return apiClient.get<FunnelStageItem[]>('/dashboard/sales-funnel');
-}
+export async function fetchDashboardKpisApi(range?: DashboardDateRange) { return parseDashboardKpis(await apiClient.get<unknown>(withRange('/dashboard/kpis', range))); }
+export async function fetchSalesFunnelApi() { return parse(z.array(funnelStageSchema), await apiClient.get<unknown>('/dashboard/sales-funnel'), 'Sales funnel'); }
+export async function fetchRevenueChartApi(range: DashboardDateRange) { return parse(revenueChartSchema, await apiClient.get<unknown>(withRange('/dashboard/revenue-chart', range)), 'Revenue chart'); }
+export async function fetchTopPerformersApi(range?: DashboardDateRange) { return parse(z.array(topPerformerSchema), await apiClient.get<unknown>(withRange('/dashboard/top-performers', range)), 'Top performers'); }
+export async function fetchLeadConversionsApi(range?: DashboardDateRange) { return parse(z.array(leadConversionSchema), await apiClient.get<unknown>(withRange('/dashboard/lead-conversions', range)), 'Lead conversions'); }
+export async function fetchActivitiesSummaryApi(range?: DashboardDateRange) { return parse(activitiesSummarySchema, await apiClient.get<unknown>(withRange('/dashboard/activities-summary', range)), 'Activity summary'); }
+export async function fetchRecentDealsApi(range?: DashboardDateRange) { return parse(z.array(recentDealSchema), await apiClient.get<unknown>(withRange('/dashboard/recent-deals', range)), 'Recent deals'); }
+export async function fetchDashboardAiInsightsApi() { return parse(dashboardAiInsightsSchema, await apiClient.get<unknown>('/dashboard/ai-insights'), 'AI insights'); }
+export async function fetchCustomWidgetsApi() { return parse(z.array(customWidgetSchema), await apiClient.get<unknown>('/dashboard/custom-widgets'), 'Dashboard widgets'); }
+export async function saveCustomWidgetsApi(widgets: CustomWidget[]): Promise<MessageResponse> { return apiClient.post('/dashboard/custom-widgets', widgets); }
 
-export async function fetchTopPerformersApi(): Promise<TopPerformerItem[]> {
-  return apiClient.get<TopPerformerItem[]>('/dashboard/top-performers');
-}
-
-export async function fetchLeadConversionsApi(): Promise<LeadConversionItem[]> {
-  return apiClient.get<LeadConversionItem[]>('/dashboard/lead-conversions');
-}
-
-export async function fetchActivitiesSummaryApi(): Promise<ActivitiesSummary> {
-  return apiClient.get<ActivitiesSummary>('/dashboard/activities-summary');
-}
-
-export async function fetchRecentDealsApi(): Promise<RecentDealItem[]> {
-  return apiClient.get<RecentDealItem[]>('/dashboard/recent-deals');
-}
-
-export async function fetchDashboardAiInsightsApi(): Promise<DashboardAiInsights> {
-  return apiClient.get<DashboardAiInsights>('/dashboard/ai-insights');
-}
-
-export async function fetchCustomWidgetsApi(): Promise<CustomWidget[]> {
-  return apiClient.get<CustomWidget[]>('/dashboard/custom-widgets');
-}
-
-export async function saveCustomWidgetsApi(widgets: CustomWidget[]): Promise<MessageResponse> {
-  return apiClient.post<MessageResponse>('/dashboard/custom-widgets', widgets);
-}
-
-// ---------------------------------------------------------------------------
-// TanStack Query & Mutation Hooks
-// ---------------------------------------------------------------------------
-
-export function useDashboardKpisQuery(options?: Omit<UseQueryOptions<DashboardKPIs>, 'queryKey' | 'queryFn'>) {
-  return useQuery<DashboardKPIs>({
-    queryKey: ['dashboard', 'kpis', 'v2'],
-    queryFn: fetchDashboardKpisApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
-export function useSalesFunnelQuery(options?: Omit<UseQueryOptions<FunnelStageItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<FunnelStageItem[]>({
-    queryKey: ['dashboard', 'sales-funnel'],
-    queryFn: fetchSalesFunnelApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
-export function useTopPerformersQuery(options?: Omit<UseQueryOptions<TopPerformerItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<TopPerformerItem[]>({
-    queryKey: ['dashboard', 'top-performers'],
-    queryFn: fetchTopPerformersApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
-export function useLeadConversionsQuery(options?: Omit<UseQueryOptions<LeadConversionItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<LeadConversionItem[]>({
-    queryKey: ['dashboard', 'lead-conversions'],
-    queryFn: fetchLeadConversionsApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
-export function useActivitiesSummaryQuery(options?: Omit<UseQueryOptions<ActivitiesSummary>, 'queryKey' | 'queryFn'>) {
-  return useQuery<ActivitiesSummary>({
-    queryKey: ['dashboard', 'activities-summary'],
-    queryFn: fetchActivitiesSummaryApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
-export function useRecentDealsQuery(options?: Omit<UseQueryOptions<RecentDealItem[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<RecentDealItem[]>({
-    queryKey: ['dashboard', 'recent-deals'],
-    queryFn: fetchRecentDealsApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
-export function useDashboardAiInsightsQuery(options?: Omit<UseQueryOptions<DashboardAiInsights>, 'queryKey' | 'queryFn'>) {
-  return useQuery<DashboardAiInsights>({
-    queryKey: ['dashboard', 'ai-insights'],
-    queryFn: fetchDashboardAiInsightsApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
-export function useCustomWidgetsQuery(options?: Omit<UseQueryOptions<CustomWidget[]>, 'queryKey' | 'queryFn'>) {
-  return useQuery<CustomWidget[]>({
-    queryKey: ['dashboard', 'custom-widgets'],
-    queryFn: fetchCustomWidgetsApi,
-    staleTime: 1000 * 60 * 5,
-    ...options,
-  });
-}
-
+type QueryOptions<T> = Omit<UseQueryOptions<T>, 'queryKey' | 'queryFn'>;
+export function useDashboardKpisQuery(range?: DashboardDateRange, options?: QueryOptions<DashboardKPIs>) { return useQuery({ queryKey: dashboardQueryKeys.kpis(range), queryFn: () => fetchDashboardKpisApi(range), staleTime: 300_000, ...options }); }
+export function useSalesFunnelQuery(options?: QueryOptions<FunnelStageItem[]>) { return useQuery({ queryKey: dashboardQueryKeys.funnel(), queryFn: fetchSalesFunnelApi, staleTime: 300_000, ...options }); }
+export function useRevenueChartQuery(range: DashboardDateRange, options?: QueryOptions<RevenueChart>) { return useQuery({ queryKey: dashboardQueryKeys.revenue(range), queryFn: () => fetchRevenueChartApi(range), staleTime: 300_000, ...options }); }
+export function useTopPerformersQuery(range?: DashboardDateRange, options?: QueryOptions<TopPerformerItem[]>) { return useQuery({ queryKey: dashboardQueryKeys.performers(range), queryFn: () => fetchTopPerformersApi(range), staleTime: 300_000, ...options }); }
+export function useLeadConversionsQuery(range?: DashboardDateRange, options?: QueryOptions<LeadConversionItem[]>) { return useQuery({ queryKey: dashboardQueryKeys.conversions(range), queryFn: () => fetchLeadConversionsApi(range), staleTime: 300_000, ...options }); }
+export function useActivitiesSummaryQuery(range?: DashboardDateRange, options?: QueryOptions<ActivitiesSummary>) { return useQuery({ queryKey: dashboardQueryKeys.activities(range), queryFn: () => fetchActivitiesSummaryApi(range), staleTime: 300_000, ...options }); }
+export function useRecentDealsQuery(range?: DashboardDateRange, options?: QueryOptions<RecentDealItem[]>) { return useQuery({ queryKey: dashboardQueryKeys.deals(range), queryFn: () => fetchRecentDealsApi(range), staleTime: 300_000, ...options }); }
+export function useDashboardAiInsightsQuery(options?: QueryOptions<DashboardAiInsights>) { return useQuery({ queryKey: dashboardQueryKeys.insights(), queryFn: fetchDashboardAiInsightsApi, staleTime: 300_000, ...options }); }
+export function useCustomWidgetsQuery(options?: QueryOptions<CustomWidget[]>) { return useQuery({ queryKey: dashboardQueryKeys.widgets(), queryFn: fetchCustomWidgetsApi, staleTime: 300_000, ...options }); }
 export function useSaveCustomWidgetsMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: saveCustomWidgetsApi,
+    onMutate: (): { generation: AuthSessionGeneration } => ({ generation: captureAuthSessionGeneration() }),
+    onSuccess: (_response, widgets, context) => {
+      if (context && isAuthSessionGenerationCurrent(context.generation)) {
+        queryClient.setQueryData(dashboardQueryKeys.widgets(), widgets);
+      }
+    },
   });
 }
