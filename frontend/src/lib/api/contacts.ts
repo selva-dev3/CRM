@@ -15,6 +15,7 @@ export interface ContactItem {
   is_starred?: boolean;
   status?: string;
   created_at?: string;
+  updated_at?: string;
   custom_fields?: Record<string, CustomFieldValue>;
 }
 
@@ -39,6 +40,7 @@ export interface ContactCreatePayload {
 }
 
 export interface ContactUpdatePayload {
+  expected_updated_at?: string;
   first_name?: string;
   last_name?: string;
   name?: string;

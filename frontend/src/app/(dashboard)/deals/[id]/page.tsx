@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { ResponsiveSelect } from '@/components/common/responsive-select';
+import { getErrorMessage } from '@/lib/utils';
 import { SearchableCompanySelect } from '@/components/common/searchable-company-select';
 
 import React, { useState } from 'react';
@@ -289,13 +290,14 @@ export default function DealDetailsPage() {
           contact_id: formContactId,
           assigned_to: formAssignedTo || undefined,
           custom_fields: formCustomFields,
+          expected_updated_at: deal?.updated_at,
         },
       });
       setSuccessMessage('Deal details updated successfully.');
       setIsEditModalOpen(false);
       refetch();
-    } catch {
-      setErrorMessage('Failed to update deal.');
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Failed to update deal.'));
     }
   };
 

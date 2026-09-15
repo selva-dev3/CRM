@@ -16,9 +16,11 @@ export interface TaskItem {
   company_id?: string;
   deal_id?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface TaskCreatePayload {
+  expected_updated_at?: string;
   title: string;
   description?: string;
   priority?: string;
@@ -33,6 +35,7 @@ export interface TaskCreatePayload {
 }
 
 export interface TaskUpdatePayload {
+  expected_updated_at?: string;
   title?: string;
   description?: string;
   priority?: string;

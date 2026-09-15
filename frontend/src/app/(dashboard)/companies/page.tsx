@@ -148,6 +148,7 @@ export default function CompaniesPage() {
           size: formSize || (formEmployeeCount ? String(formEmployeeCount) : undefined),
           employee_count: formEmployeeCount !== '' ? Number(formEmployeeCount) : undefined,
           custom_fields: formCustomFields,
+          expected_updated_at: companyToEdit.updated_at,
         },
       });
       setSuccessMessage(`Company '${formName}' updated successfully.`);

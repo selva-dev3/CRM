@@ -22,6 +22,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { ActionMenu } from '@/components/common/action-menu';
+import { getErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -255,6 +256,7 @@ export default function ContactDetailsPage() {
           position: formPosition || undefined,
           job_title: formJobTitle || formPosition || undefined,
           custom_fields: formCustomFields,
+          expected_updated_at: contact?.updated_at,
         },
       });
       await updateBillingAddressMutation.mutateAsync({
@@ -270,8 +272,8 @@ export default function ContactDetailsPage() {
       setSuccessMessage('Contact updated successfully.');
       setIsEditModalOpen(false);
       refetchContact();
-    } catch {
-      setErrorMessage('Failed to update contact.');
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Failed to update contact.'));
     }
   };
 

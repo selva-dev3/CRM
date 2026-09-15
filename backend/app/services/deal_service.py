@@ -4,6 +4,7 @@ from uuid import NAMESPACE_URL, uuid5
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.concurrency import ensure_fresh_record
 from app.core.errors import APIException, ConflictError, NotFoundError
 from app.models import User
 from app.models.deal import Deal
@@ -55,6 +56,7 @@ def deal_to_dict(d: Deal) -> dict:
         "custom_fields": d.custom_fields or {},
         "organization_id": d.organization_id,
         "created_at": str(d.created_at) if d.created_at else None,
+        "updated_at": str(d.updated_at) if d.updated_at else None,
     }
 
 
@@ -604,6 +606,7 @@ class DealService:
         )
         if not d:
             raise NotFoundError(message="Deal not found")
+        await ensure_fresh_record(db, d, payload.expected_updated_at, "deal")
         if payload.stage == DEAL_STAGE_CLOSED_WON:
             if not organization_id or not actor_id:
                 raise APIException(message="Organization and actor are required to close a deal")

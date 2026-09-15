@@ -54,6 +54,7 @@ import { CustomFieldValues } from '@/components/common/custom-field-values';
 import { CustomFields } from '@/components/common/custom-fields';
 import { PermissionGate } from '@/components/common/permission-gate';
 import { PERMISSIONS } from '@/lib/permissions';
+import { getErrorMessage } from '@/lib/utils';
 import {
   useEntityCustomFieldsQuery,
   type CustomFieldValue,
@@ -169,13 +170,14 @@ export default function CompanyDetailsPage() {
           size: formSize || (formEmployeeCount ? String(formEmployeeCount) : undefined),
           employee_count: formEmployeeCount !== '' ? Number(formEmployeeCount) : undefined,
           custom_fields: formCustomFields,
+          expected_updated_at: company?.updated_at,
         },
       });
       setSuccessMessage('Company profile updated successfully.');
       setIsEditModalOpen(false);
       refetch();
-    } catch {
-      setErrorMessage('Failed to update company profile.');
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, 'Failed to update company profile.'));
     }
   };
 

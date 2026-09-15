@@ -25,7 +25,7 @@ import {
 } from '@/lib/api/leads';
 import { useCurrentOrganizationQuery } from '@/lib/api/organizations';
 import { PERMISSIONS } from '@/lib/permissions';
-import { cn } from '@/lib/utils';
+import { cn, getErrorMessage } from '@/lib/utils';
 import { LEAD_FORM_DEFAULTS, leadFormSchema, type LeadFormValues } from './lead-form-schema';
 
 const STEPS = [
@@ -178,6 +178,7 @@ export function LeadFormDialog({ isOpen, onClose, lead, onSaved }: LeadFormDialo
         is_archived: false,
         assigned_to: canAssign ? optional(values.assigned_to) : undefined,
       }),
+      ...(lead?.updated_at ? { expected_updated_at: lead.updated_at } : {}),
     };
 
     try {
@@ -202,9 +203,9 @@ export function LeadFormDialog({ isOpen, onClose, lead, onSaved }: LeadFormDialo
         }
         if (firstServerErrorStep >= 0) setStep(firstServerErrorStep);
       }
-      setServerError(error instanceof Error && error.message
-        ? error.message
-        : `The lead could not be ${lead ? 'updated' : 'created'}. Please try again.`);
+      setServerError(
+        getErrorMessage(error, `The lead could not be ${lead ? 'updated' : 'created'}. Please try again.`),
+      );
     }
   }, focusFirstInvalidStep);
 

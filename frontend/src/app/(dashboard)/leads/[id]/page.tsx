@@ -594,7 +594,10 @@ export default function LeadDetailPage() {
     try {
       setIsUpdatingLifecycle(true);
       setErrorMessage(null);
-      await updateLeadMutation.mutateAsync({ id: leadId, payload: { status: 'Contacted' } });
+      await updateLeadMutation.mutateAsync({
+        id: leadId,
+        payload: { status: 'Contacted', expected_updated_at: lead?.updated_at },
+      });
       await refreshLifecycle();
       setSuccessMessage('Lead marked as Contacted.');
     } catch (err: unknown) {

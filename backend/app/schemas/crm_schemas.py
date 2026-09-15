@@ -436,6 +436,7 @@ class LeadCreate(LeadBase):
 
 
 class LeadUpdate(BaseModel):
+    expected_updated_at: datetime | None = None
     title: str | None = None
     company: str | None = None
     contact_name: str | None = None
@@ -518,6 +519,7 @@ class ContactCreate(ContactBase):
 
 
 class ContactUpdate(ContactBase):
+    expected_updated_at: datetime | None = None
     custom_fields: dict[str, CustomFieldValue] | None = None
 
 
@@ -558,6 +560,7 @@ class ContactResponse(BaseModel):
     is_starred: bool | None = False
     status: str | None = None
     created_at: str | None = None
+    updated_at: str | None = None
     custom_fields: dict[str, CustomFieldValue] = Field(default_factory=dict)
 
 
@@ -577,6 +580,7 @@ class CompanyCreate(CompanyBase):
 
 
 class CompanyUpdate(BaseModel):
+    expected_updated_at: datetime | None = None
     name: str | None = None
     domain: str | None = None
     website: str | None = None
@@ -595,6 +599,7 @@ class CompanyResponse(BaseModel):
     size: str | None = None
     employee_count: int | None = None
     created_at: str | None = None
+    updated_at: str | None = None
     custom_fields: dict[str, CustomFieldValue] = Field(default_factory=dict)
 
 
@@ -621,6 +626,7 @@ class DealCreate(DealBase):
 
 
 class DealUpdate(BaseModel):
+    expected_updated_at: datetime | None = None
     title: str | None = None
     stage: str | None = None
     amount: float | None = None
@@ -637,6 +643,7 @@ class DealResponse(DealBase):
     id: str
     organization_id: str
     created_at: str
+    updated_at: str | None = None
 
 
 # 9. Task Schemas
@@ -660,6 +667,7 @@ class TaskCreate(TaskBase):
 
 
 class TaskUpdate(BaseModel):
+    expected_updated_at: datetime | None = None
     title: str | None = None
     description: str | None = None
     due_date: str | None = None
@@ -677,6 +685,7 @@ class TaskUpdate(BaseModel):
 class TaskResponse(TaskBase):
     id: str
     created_at: str
+    updated_at: str | None = None
 
 
 class TaskDependencyCreate(BaseModel):
