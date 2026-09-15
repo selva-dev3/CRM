@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -37,13 +38,16 @@ from app.models import (
     RolePermission,
     RoleRecordScope,
     SLAPolicy,
+    StorageReconciliation,
     User,
     UserInvitation,
     UserRole,
     UserSession,
 )
 from app.repositories.role_repository import RoleRepository
+from app.repositories.storage_reconciliation_repository import StorageReconciliationRepository
 from app.schemas.crm_schemas import LoginRequest
+from app.services import storage_reconciliation_service as storage_reconciliation_module
 from app.services.auth_service import AuthService
 from app.services.organization_lifecycle_service import organization_lifecycle_service
 from app.services.role_service import ALL_STANDARD_PERMISSIONS
@@ -125,6 +129,390 @@ async def create(client, name="Lifecycle organization", **extra):
     response = await client.post("/organizations", json={"name": name, **extra})
     assert response.status_code == 201, response.text
     return response.json()["organization"]
+
+
+@pytest.mark.asyncio
+async def test_storage_finding_upsert_and_claim_are_concurrency_safe(lifecycle):
+    client, sessions, _, _ = lifecycle
+    organization = await create(client, "Storage reconciliation concurrency")
+    repository = StorageReconciliationRepository()
+    now = datetime.now(UTC)
+    finding = {("orphan", f"documents/{organization['id']}/orphan.pdf")}
+
+    async def insert_once():
+        async with sessions() as db:
+            await repository.insert_findings(
+                db,
+                organization_id=organization["id"],
+                findings=finding,
+                bucket="crm-test-bucket",
+                endpoint="http://localhost:9000",
+                now=now - timedelta(days=2),
+            )
+            await db.commit()
+
+    await asyncio.gather(insert_once(), insert_once())
+    async with sessions() as db:
+        rows = list(
+            await db.scalars(
+                select(StorageReconciliation).where(
+                    StorageReconciliation.organization_id == organization["id"]
+                )
+            )
+        )
+        assert len(rows) == 1
+        finding_id = rows[0].id
+
+    async def claim_once():
+        async with sessions() as db:
+            claimed = await repository.claim_orphan(
+                db,
+                finding_id=finding_id,
+                eligible_before=now - timedelta(days=1),
+                now=now,
+                claimed_until=now + timedelta(minutes=10),
+                max_attempts=5,
+            )
+            await db.commit()
+            return claimed is not None
+
+    assert sum(await asyncio.gather(claim_once(), claim_once())) == 1
+    async with sessions() as db:
+        stored = await db.get(StorageReconciliation, finding_id)
+        assert stored is not None
+        stored.claimed_until = now - timedelta(seconds=1)
+        await db.commit()
+    async with sessions() as db:
+        recovered = await repository.claim_orphan(
+            db,
+            finding_id=finding_id,
+            eligible_before=now - timedelta(days=1),
+            now=now,
+            claimed_until=now + timedelta(minutes=10),
+            max_attempts=5,
+        )
+        await db.commit()
+        assert recovered is not None
+        assert recovered.attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_storage_claim_migration_round_trip_preserves_findings(lifecycle):
+    client, sessions, _, _ = lifecycle
+    organization = await create(client, "Storage claim migration")
+    async with sessions() as db:
+        db.add(
+            StorageReconciliation(
+                organization_id=organization["id"],
+                object_key=f"documents/{organization['id']}/kept.pdf",
+                bucket="crm-test-bucket",
+                endpoint="http://localhost:9000",
+                finding="missing",
+                status="detected",
+                attempts=0,
+            )
+        )
+        await db.commit()
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[3] / "alembic"))
+    await asyncio.to_thread(command.downgrade, config, "k8b9c0d1e2f3")
+    await asyncio.to_thread(command.upgrade, config, "head")
+    async with sessions() as db:
+        assert (
+            await db.scalar(
+                select(func.count())
+                .select_from(StorageReconciliation)
+                .where(StorageReconciliation.organization_id == organization["id"])
+            )
+            == 1
+        )
+
+
+@pytest.mark.asyncio
+async def test_storage_delete_failure_survives_real_session_rollback(lifecycle, monkeypatch):
+    client, sessions, _, _ = lifecycle
+    organization = await create(client, "Storage failure recovery")
+    now = datetime.now(UTC)
+    object_key = f"documents/{organization['id']}/orphan.pdf"
+    async with sessions() as db:
+        db.add(
+            StorageReconciliation(
+                organization_id=organization["id"],
+                object_key=object_key,
+                bucket=settings.AWS_S3_BUCKET,
+                endpoint=settings.AWS_ENDPOINT_URL,
+                finding="orphan",
+                status="detected",
+                attempts=0,
+                first_seen_at=now - timedelta(days=2),
+                last_seen_at=now - timedelta(days=2),
+            )
+        )
+        await db.commit()
+
+    monkeypatch.setattr(
+        storage_reconciliation_module.s3_service,
+        "list_file_keys",
+        lambda prefix, limit, known: [object_key] if object_key.startswith(prefix) else [],
+    )
+
+    def fail_delete(_object_key):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(storage_reconciliation_module.s3_service, "delete_file", fail_delete)
+    async with sessions() as db:
+        result = await storage_reconciliation_module.reconcile_organization_storage(
+            db, organization["id"], now=now
+        )
+
+    assert result["failed"] == 1
+    async with sessions() as db:
+        stored = await db.scalar(
+            select(StorageReconciliation).where(
+                StorageReconciliation.organization_id == organization["id"],
+                StorageReconciliation.object_key == object_key,
+            )
+        )
+        assert stored is not None
+        assert stored.status == "failed"
+        assert stored.attempts == 1
+        assert stored.last_error == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_storage_services_delete_an_orphan_once(lifecycle, monkeypatch):
+    client, sessions, _, _ = lifecycle
+    organization = await create(client, "Storage service concurrency")
+    now = datetime.now(UTC)
+    object_key = f"documents/{organization['id']}/orphan.pdf"
+    async with sessions() as db:
+        db.add(
+            StorageReconciliation(
+                organization_id=organization["id"],
+                object_key=object_key,
+                bucket=settings.AWS_S3_BUCKET,
+                endpoint=settings.AWS_ENDPOINT_URL,
+                finding="orphan",
+                status="detected",
+                attempts=0,
+                first_seen_at=now - timedelta(days=2),
+                last_seen_at=now - timedelta(days=2),
+            )
+        )
+        await db.commit()
+
+    monkeypatch.setattr(
+        storage_reconciliation_module.s3_service,
+        "list_file_keys",
+        lambda prefix, limit, known: [object_key] if object_key.startswith(prefix) else [],
+    )
+    delete_count = 0
+
+    def delete_once(_object_key):
+        nonlocal delete_count
+        delete_count += 1
+        return True
+
+    monkeypatch.setattr(storage_reconciliation_module.s3_service, "delete_file", delete_once)
+
+    async def reconcile_once():
+        async with sessions() as db:
+            return await storage_reconciliation_module.reconcile_organization_storage(
+                db, organization["id"], now=now
+            )
+
+    results = await asyncio.gather(reconcile_once(), reconcile_once())
+
+    assert sum(result["deleted"] for result in results) == 1
+    assert delete_count == 1
+
+
+@pytest.mark.asyncio
+async def test_storage_delete_preserves_cross_tenant_encoded_url_reference(lifecycle, monkeypatch):
+    client, sessions, _, _ = lifecycle
+    owner = await create(client, "Storage object owner")
+    referrer = await create(client, "Storage cross-tenant referrer")
+    now = datetime.now(UTC)
+    object_key = f"documents/{owner['id']}/orphan.pdf"
+    endpoint = storage_reconciliation_module.urlsplit(settings.AWS_ENDPOINT_URL)
+    alternate_scheme = "https" if endpoint.scheme == "http" else "http"
+    encoded_key = object_key.replace("/", "%2F")
+    reference = (
+        f" \t{alternate_scheme}://{endpoint.netloc}/{settings.AWS_S3_BUCKET}/"
+        f"{encoded_key}#retained"
+    )
+    assert storage_reconciliation_module.storage_key(reference, "url") == object_key
+    async with sessions() as db:
+        await db.execute(
+            update(OrganizationSetting)
+            .where(OrganizationSetting.organization_id == referrer["id"])
+            .values(logo_url=reference)
+        )
+        db.add(
+            StorageReconciliation(
+                organization_id=owner["id"],
+                object_key=object_key,
+                bucket=settings.AWS_S3_BUCKET,
+                endpoint=settings.AWS_ENDPOINT_URL,
+                finding="orphan",
+                status="detected",
+                attempts=0,
+                first_seen_at=now - timedelta(days=2),
+                last_seen_at=now - timedelta(days=2),
+            )
+        )
+        await db.commit()
+
+    monkeypatch.setattr(
+        storage_reconciliation_module.s3_service,
+        "list_file_keys",
+        lambda prefix, limit, known: [object_key] if object_key.startswith(prefix) else [],
+    )
+    delete_called = False
+
+    def delete_file(_object_key):
+        nonlocal delete_called
+        delete_called = True
+        return True
+
+    monkeypatch.setattr(storage_reconciliation_module.s3_service, "delete_file", delete_file)
+    async with sessions() as db:
+        result = await storage_reconciliation_module.reconcile_organization_storage(
+            db, owner["id"], now=now
+        )
+
+    assert result["deleted"] == 0
+    assert delete_called is False
+
+
+@pytest.mark.asyncio
+async def test_storage_reconciliation_fails_closed_for_invalid_percent_decoding(
+    lifecycle, monkeypatch
+):
+    client, sessions, _, _ = lifecycle
+    owner = await create(client, "Storage ambiguous object owner")
+    referrer = await create(client, "Storage ambiguous referrer")
+    object_key = f"documents/{owner['id']}/\ufffd.pdf"
+    endpoint = storage_reconciliation_module.urlsplit(settings.AWS_ENDPOINT_URL)
+    reference = (
+        f"{endpoint.scheme}://{endpoint.netloc}/{settings.AWS_S3_BUCKET}/"
+        f"documents%2F{owner['id']}%2F%FF.pdf"
+    )
+    assert storage_reconciliation_module.storage_key(reference, "url") is None
+    async with sessions() as db:
+        await db.execute(
+            update(OrganizationSetting)
+            .where(OrganizationSetting.organization_id == referrer["id"])
+            .values(logo_url=reference)
+        )
+        await db.commit()
+
+    monkeypatch.setattr(
+        storage_reconciliation_module.s3_service,
+        "list_file_keys",
+        lambda prefix, limit, known: [object_key] if object_key.startswith(prefix) else [],
+    )
+    delete_called = False
+
+    def delete_file(_object_key):
+        nonlocal delete_called
+        delete_called = True
+        return True
+
+    monkeypatch.setattr(storage_reconciliation_module.s3_service, "delete_file", delete_file)
+    async with sessions() as db:
+        with pytest.raises(ValueError, match="invalid object key"):
+            await storage_reconciliation_module.reconcile_organization_storage(db, owner["id"])
+
+    assert delete_called is False
+
+
+@pytest.mark.asyncio
+async def test_storage_sync_accepts_maximum_bounded_inventory(lifecycle):
+    client, sessions, _, _ = lifecycle
+    organization = await create(client, "Storage maximum inventory")
+    now = datetime.now(UTC)
+    findings = {
+        (
+            "orphan" if index < 10_000 else "missing",
+            f"documents/{organization['id']}/item-{index}.pdf",
+        )
+        for index in range(20_000)
+    }
+    repository = StorageReconciliationRepository()
+    async with sessions() as db:
+        await repository.insert_findings(
+            db,
+            organization_id=organization["id"],
+            findings=findings,
+            bucket=settings.AWS_S3_BUCKET,
+            endpoint=settings.AWS_ENDPOINT_URL,
+            now=now,
+        )
+        await repository.synchronize_findings(
+            db,
+            organization["id"],
+            findings,
+            now=now,
+            max_attempts=storage_reconciliation_module.MAX_DELETE_ATTEMPTS,
+        )
+        await db.commit()
+        assert await repository.count_active(db, organization["id"]) == 20_000
+
+
+@pytest.mark.asyncio
+async def test_expired_final_storage_claim_becomes_terminal_after_restart(lifecycle, monkeypatch):
+    client, sessions, _, _ = lifecycle
+    organization = await create(client, "Storage final claim recovery")
+    now = datetime.now(UTC)
+    object_key = f"documents/{organization['id']}/orphan.pdf"
+    async with sessions() as db:
+        db.add(
+            StorageReconciliation(
+                organization_id=organization["id"],
+                object_key=object_key,
+                bucket=settings.AWS_S3_BUCKET,
+                endpoint=settings.AWS_ENDPOINT_URL,
+                finding="orphan",
+                status="deleting",
+                attempts=storage_reconciliation_module.MAX_DELETE_ATTEMPTS,
+                first_seen_at=now - timedelta(days=2),
+                last_seen_at=now - timedelta(days=2),
+                claimed_until=now - timedelta(minutes=1),
+                claim_token=str(uuid4()),
+            )
+        )
+        await db.commit()
+
+    monkeypatch.setattr(
+        storage_reconciliation_module.s3_service,
+        "list_file_keys",
+        lambda prefix, limit, known: [object_key] if object_key.startswith(prefix) else [],
+    )
+    delete_called = False
+
+    def delete_file(_object_key):
+        nonlocal delete_called
+        delete_called = True
+        return True
+
+    monkeypatch.setattr(storage_reconciliation_module.s3_service, "delete_file", delete_file)
+    async with sessions() as db:
+        await storage_reconciliation_module.reconcile_organization_storage(
+            db, organization["id"], now=now
+        )
+
+    assert delete_called is False
+    async with sessions() as db:
+        stored = await db.scalar(
+            select(StorageReconciliation).where(
+                StorageReconciliation.organization_id == organization["id"],
+                StorageReconciliation.object_key == object_key,
+            )
+        )
+        assert stored is not None
+        assert stored.status == "terminal"
+        assert stored.last_error == "STORAGE_DELETE_FINAL_CLAIM_EXPIRED"
 
 
 @pytest.mark.asyncio

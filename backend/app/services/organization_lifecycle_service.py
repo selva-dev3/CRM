@@ -51,12 +51,16 @@ def storage_key(value: str, kind: str) -> str | None:
         prefix = f"/{settings.AWS_S3_BUCKET}/"
         if not parsed.path.startswith(prefix):
             return None
-        value = unquote(parsed.path[len(prefix) :])
+        try:
+            value = unquote(parsed.path[len(prefix) :], errors="strict")
+        except UnicodeDecodeError:
+            return None
     if (
         not value
         or len(value) > 1024
         or value.startswith("/")
         or "\x00" in value
+        or "\ufffd" in value
         or any(part in {"", ".", ".."} for part in value.split("/"))
     ):
         return None
