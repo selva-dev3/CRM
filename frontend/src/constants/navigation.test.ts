@@ -94,8 +94,6 @@ describe('getRoutePermission', () => {
       'Roles & Permissions',
       'Custom Fields',
       'Workflows / Automation',
-      'Integrations',
-      'Settings',
     ]);
   });
 
