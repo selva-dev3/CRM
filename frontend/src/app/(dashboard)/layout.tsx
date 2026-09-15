@@ -162,8 +162,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return formattedSegments.join(' / ');
   }, [pathname]);
 
-  const isUtilityPage = pathname === '/settings' || pathname === '/integrations';
-
   const visibleSections = React.useMemo(
     () => filterNavigationSections(navigationSections, permissions),
     [permissions]
@@ -373,7 +371,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen bg-[#F9FAFB] text-[#111827] overflow-hidden font-sans relative">
-      {!isUtilityPage && <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+      <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
         <SheetContent side="left" className="w-64 gap-0 p-0 sm:max-w-64 lg:hidden">
           <SheetTitle className="sr-only">CRM navigation</SheetTitle>
           <div className="p-4 border-b border-[#E5E7EB] flex items-center gap-3 shrink-0">
@@ -387,10 +385,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
           {sidebarBody}
         </SheetContent>
-      </Sheet>}
+      </Sheet>
 
       {/* Fixed Sidebar (Width w-64 / 256px) */}
-      {!isUtilityPage && <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-[#E5E7EB] bg-white shadow-sm lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-[#E5E7EB] bg-white shadow-sm lg:flex">
         {/* Brand Header */}
         <div className="p-4 border-b border-[#E5E7EB] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -408,14 +406,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
         {sidebarBody}
-      </aside>}
+      </aside>
 
       {/* Main Content Area (padded left for fixed sidebar w-64) */}
-      <div className={`flex-1 flex flex-col overflow-hidden min-w-0 ${isUtilityPage ? '' : 'lg:pl-64'}`}>
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0 lg:pl-64">
         {/* Header */}
         <header className="h-16 border-b border-[#E5E7EB] bg-white/95 backdrop-blur px-4 sm:px-6 flex items-center justify-between shadow-xs shrink-0">
           <div className="flex items-center gap-3">
-            {!isUtilityPage && <Button
+            <Button
               type="button"
               variant="ghost"
               size="icon-sm"
@@ -424,7 +422,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               aria-label="Open navigation"
             >
               <Menu className="w-5 h-5" />
-            </Button>}
+            </Button>
             <h2 className="text-base font-bold text-[#111827] tracking-tight truncate">
               {pageTitle}
             </h2>
