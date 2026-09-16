@@ -1,5 +1,6 @@
 import json
 import re
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from difflib import SequenceMatcher
 from time import monotonic
@@ -57,18 +58,36 @@ from app.schemas.ai import (
 )
 from app.schemas.crm_schemas import TaskCreate
 from app.schemas.dashboard import DashboardAiInsightsResponse, RiskDealInsight
+from app.services.ai_privacy_service import ai_data_classification_service
 from app.services.ai_provider_service import ai_provider_gateway
 from app.services.ai_runtime_service import AIRuntimeService, ai_runtime_service
-from app.services.auth_service import auth_service
+from app.services.ai_tool_registry import AIToolContext, AIToolRegistry, ai_tool_registry
+from app.services.auth_service import api_key_scope_allows, auth_service
 from app.services.record_access_service import record_access_service
 from app.services.report_service import ReportService, report_service
-from app.services.task_service import TaskService, task_service
+from app.services.task_service import TaskService, task_service, task_to_dict
 
 logger = get_logger(__name__)
 
 
 class AIDomainService:
     """Tenant-scoped business logic for provider-backed AI features."""
+
+    async def _default_task_assignee(
+        self, db: AsyncSession, current_user: User, organization_id: str
+    ) -> str:
+        if not current_user.is_platform_admin:
+            return current_user.id
+        assignee_id = await self.task_service.repository.first_active_user_id(
+            db, organization_id=organization_id
+        )
+        if assignee_id is None:
+            raise APIException(
+                status_code=422,
+                code="AI_ACTION_ASSIGNEE_REQUIRED",
+                message="The selected organization has no active user available for task assignment.",
+            )
+        return assignee_id
 
     async def whatsapp_customer_chat(
         self,
@@ -114,10 +133,12 @@ class AIDomainService:
                 "recordings, email bodies, custom fields, permissions, or another person's data. "
                 "Choose human when the customer requests an agent. Do not execute actions."
             ),
-            user_prompt=json.dumps(
-                {"channel": "WHATSAPP", "message": message[:4096], "history": history[-10:]},
-                ensure_ascii=False,
-            ),
+            task_instructions="Classify the authorized WhatsApp customer context.",
+            provider_context={
+                "channel": "WHATSAPP",
+                "message": message[:4096],
+                "history": history[-10:],
+            },
             output_schema=CustomerAIPlan,
             entity_type="whatsapp_conversation",
             entity_id=conversation_id,
@@ -168,7 +189,7 @@ class AIDomainService:
     ) -> list[dict[str, Any]]:
         rows = await self.repository.list_conversations(
             db,
-            organization_id=current_user.organization_id or "",
+            organization_id=self._organization_id(current_user),
             user_id=current_user.id,
             page=page,
             limit=limit,
@@ -187,7 +208,7 @@ class AIDomainService:
     async def count_conversations(self, db: AsyncSession, current_user: User) -> int:
         return await self.repository.count_conversations(
             db,
-            organization_id=current_user.organization_id or "",
+            organization_id=self._organization_id(current_user),
             user_id=current_user.id,
         )
 
@@ -197,7 +218,7 @@ class AIDomainService:
         conversation = await self.repository.get_conversation(
             db,
             conversation_id=conversation_id,
-            organization_id=current_user.organization_id or "",
+            organization_id=self._organization_id(current_user),
             user_id=current_user.id,
         )
         if not conversation:
@@ -205,7 +226,7 @@ class AIDomainService:
         prompts = await self.repository.list_conversation_prompts(
             db,
             conversation_id=conversation_id,
-            organization_id=current_user.organization_id or "",
+            organization_id=self._organization_id(current_user),
             user_id=current_user.id,
             limit=100,
         )
@@ -241,7 +262,7 @@ class AIDomainService:
         deleted = await self.repository.delete_conversation(
             db,
             conversation_id=conversation_id,
-            organization_id=current_user.organization_id or "",
+            organization_id=self._organization_id(current_user),
             user_id=current_user.id,
         )
         if not deleted:
@@ -558,11 +579,20 @@ class AIDomainService:
         runtime: AIRuntimeService | None = None,
         report_service_instance: ReportService | None = None,
         task_service_instance: TaskService | None = None,
+        tool_registry: AIToolRegistry | None = None,
     ) -> None:
         self.repository = repository or AIRepository()
         self.runtime = runtime or ai_runtime_service
         self.report_service = report_service_instance or report_service
         self.task_service = task_service_instance or task_service
+        self.tool_registry = tool_registry or ai_tool_registry
+
+    @staticmethod
+    def _organization_id(current_user: User) -> str:
+        organization_id = effective_organization_id(current_user)
+        if not organization_id:
+            raise ForbiddenError(message="An organization is required to use AI features.")
+        return organization_id
 
     @staticmethod
     def _system_prompt(feature: str) -> str:
@@ -576,7 +606,12 @@ class AIDomainService:
         )
 
     async def _permission_keys(self, db: AsyncSession, current_user: User) -> set[str]:
-        return set(await auth_service.get_user_permissions(db, current_user))
+        permissions = set(await auth_service.get_user_permissions(db, current_user))
+        return {
+            permission
+            for permission in permissions
+            if api_key_scope_allows(current_user, permission)
+        }
 
     @staticmethod
     async def _record_access(db: AsyncSession, current_user: User, entity_type: str):
@@ -775,6 +810,13 @@ class AIDomainService:
     def _search_catalog(cls, permissions: set[str]) -> dict[str, dict[str, object]]:
         catalog: dict[str, dict[str, object]] = {
             entity: {
+                "registered_tools": [
+                    "get_dashboard_metrics"
+                    if entity == "report"
+                    else ai_tool_registry.tool_name_for_plan(
+                        CRMSearchPlan(entity_type=entity, intent="list")
+                    )
+                ],
                 "fields": sorted(
                     field
                     for field in fields
@@ -862,36 +904,37 @@ class AIDomainService:
         entity_type: str | None = None,
         entity_id: str | None = None,
         web_search: bool = False,
-        provider_override: str | None = None,
+        allowed_sensitive_fields: set[str] | None = None,
+        on_text_delta: Callable[[str], Awaitable[None]] | None = None,
+        persist_generated_content: bool = True,
     ) -> tuple[BaseModel, Any]:
-        prompt = (
-            f"Task instructions:\n{instructions}\n\n"
-            f"Authorized CRM context:\n{json.dumps(context, default=str, ensure_ascii=False)}"
-        )
         output, run = await self.runtime.execute(
             db,
             current_user=current_user,
             feature=feature,
             system_prompt=self._system_prompt(feature),
-            user_prompt=prompt,
+            provider_context=context,
+            task_instructions=instructions,
             output_schema=output_schema,
             entity_type=entity_type,
             entity_id=entity_id,
             web_search=web_search,
-            provider_override=provider_override,
+            allowed_sensitive_fields=allowed_sensitive_fields or set(),
+            on_text_delta=on_text_delta,
         )
-        await self.repository.create_generated_content(
-            db,
-            organization_id=effective_organization_id(current_user) or "",
-            user_id=current_user.id,
-            content_type=f"{feature}:{entity_id or run.id}",
-            generated_text=output.model_dump_json(),
-        )
-        await db.commit()
+        if persist_generated_content:
+            await self.repository.create_generated_content(
+                db,
+                organization_id=self._organization_id(current_user),
+                user_id=current_user.id,
+                content_type=f"{feature}:{entity_id or run.id}",
+                generated_text=output.model_dump_json(),
+            )
+            await db.commit()
         return output, run
 
     async def evaluate_lead_score(self, db: AsyncSession, lead_id: str, current_user: User) -> dict:
-        organization_id = current_user.organization_id or ""
+        organization_id = self._organization_id(current_user)
         lead = await self.repository.get_lead(
             db,
             lead_id=lead_id,
@@ -1125,9 +1168,11 @@ class AIDomainService:
         message: str,
         conversation_id: str | None,
         current_user: User,
+        on_text_delta: Callable[[str], Awaitable[None]] | None = None,
+        ownership_guard: Callable[[], Awaitable[None]] | None = None,
     ) -> dict:
         permissions = await self._permission_keys(db, current_user)
-        organization_id = current_user.organization_id or ""
+        organization_id = self._organization_id(current_user)
         history: list[dict[str, str]] = []
         if conversation_id:
             conversation = await self.repository.get_conversation(
@@ -1169,29 +1214,54 @@ class AIDomainService:
                 "set needs_clarification and ask one specific clarification question. Never emit SQL."
             ),
             output_schema=CRMChatPlan,
+            persist_generated_content=False,
         )
         chat_plan = CRMChatPlan.model_validate(plan_output)
         for operation in chat_plan.operations:
             self._validate_search_plan(operation)
             self._require_search_permissions(permissions, operation)
+            registered_name = self.tool_registry.tool_name_for_plan(operation)
+            if operation.tool_name is not None and operation.tool_name != registered_name:
+                raise APIException(
+                    status_code=502,
+                    code="AI_TOOL_MISMATCH",
+                    message="The AI provider requested a tool that does not match its CRM plan.",
+                )
+            operation.tool_name = cast(Any, registered_name)
 
         result_blocks: list[AIResultBlock] = []
         for index, operation in enumerate(chat_plan.operations, start=1):
-            if operation.entity_type == "report" and operation.report_type:
-                getter = getattr(
-                    self.report_service, self._REPORT_GETTERS[str(operation.report_type)]
-                )
-                report = await getter(db, current_user=current_user)
-                results = [report]
-            else:
-                results = await self.repository.execute_search_plan(
+            async def execute_registered_fallback(
+                selected: CRMSearchPlan,
+            ) -> list[dict[str, object]]:
+                if selected.entity_type == "report" and selected.report_type:
+                    getter = getattr(
+                        self.report_service, self._REPORT_GETTERS[str(selected.report_type)]
+                    )
+                    report = await getter(db, current_user=current_user)
+                    return [report]
+                return await self.repository.execute_search_plan(
                     db,
                     organization_id=organization_id,
                     current_user_id=current_user.id,
-                    access=await self._record_access(db, current_user, operation.entity_type),
-                    related_access=await self._related_record_access(db, current_user, operation),
-                    **operation.model_dump(exclude={"result_key", "title", "report_type"}),
+                    access=await self._record_access(db, current_user, selected.entity_type),
+                    related_access=await self._related_record_access(db, current_user, selected),
+                    **selected.model_dump(
+                        exclude={"tool_name", "result_key", "title", "report_type", "record_id"}
+                    ),
                 )
+
+            results = await self.tool_registry.execute_plan(
+                AIToolContext(
+                    db=db,
+                    user=current_user,
+                    organization_id=organization_id,
+                    permissions=frozenset(permissions),
+                    run=plan_run,
+                ),
+                operation,
+                fallback=execute_registered_fallback,
+            )
             explanation, result_count = self._search_explanation(operation, results)
             result_blocks.append(
                 AIResultBlock(
@@ -1238,6 +1308,11 @@ class AIDomainService:
                     "execute actions. Offer up to three useful follow-up questions."
                 ),
                 output_schema=AIChatGeneratedOutput,
+                allowed_sensitive_fields=ai_data_classification_service.requested_sensitive_fields(
+                    message
+                ),
+                on_text_delta=on_text_delta,
+                persist_generated_content=False,
             )
             generated = AIChatGeneratedOutput.model_validate(output)
 
@@ -1270,6 +1345,8 @@ class AIDomainService:
             )
             normalized_evidence.append(evidence.model_copy(update={"label": label, "detail": None}))
         generated.evidence = normalized_evidence
+        if ownership_guard is not None:
+            await ownership_guard()
         if conversation_id:
             resolved_conversation_id = conversation_id
         else:
@@ -1279,12 +1356,25 @@ class AIDomainService:
                 user_id=current_user.id,
                 title=message[:255],
                 model_name=run.model_name,
+                expires_at=datetime.now(UTC)
+                + timedelta(days=settings.AI_CONVERSATION_RETENTION_DAYS),
             )
             resolved_conversation_id = conversation.id
         executable_actions = []
         for proposal in generated.proposed_actions:
             if proposal.action_type != "create_task":
                 continue
+            try:
+                requested_action = TaskCreate.model_validate(proposal.payload)
+                requested_action.status = "Pending"
+                if requested_action.assigned_to is None:
+                    requested_action.assigned_to = await self._default_task_assignee(
+                        db, current_user, organization_id
+                    )
+                canonical_payload = requested_action.model_dump(mode="json")
+            except ValueError:
+                continue
+            proposal.payload = canonical_payload
             action = await self.repository.create_action(
                 db,
                 run_id=run.id,
@@ -1292,7 +1382,7 @@ class AIDomainService:
                 user_id=current_user.id,
                 action_type=proposal.action_type,
                 title=proposal.title[:255],
-                payload_json=json.dumps(proposal.payload),
+                payload_json=json.dumps(canonical_payload),
                 expires_at=datetime.now(UTC) + timedelta(minutes=30),
             )
             proposal.proposal_id = action.id
@@ -1325,13 +1415,18 @@ class AIDomainService:
             tokens_used=run.total_tokens,
             run_id=run.id,
             result_blocks_json=json.dumps(
-                [block.model_dump() for block in result.result_blocks], default=str
+                ai_data_classification_service.persistence_references(
+                    [block.model_dump() for block in result.result_blocks]
+                ),
+                default=str,
             ),
             evidence_json=json.dumps(
                 [evidence.model_dump() for evidence in result.evidence], default=str
             ),
             follow_up_questions_json=json.dumps(result.follow_up_questions),
         )
+        if ownership_guard is not None:
+            await ownership_guard()
         await db.commit()
         return result.model_dump() | {"run_id": run.id}
 
@@ -1341,17 +1436,25 @@ class AIDomainService:
         proposal_id: str,
         current_user: User,
     ) -> dict:
-        action = await self.repository.get_pending_action(
+        organization_id = self._organization_id(current_user)
+        action = await self.repository.get_action_for_execution(
             db,
             action_id=proposal_id,
-            organization_id=current_user.organization_id or "",
+            organization_id=organization_id,
             user_id=current_user.id,
         )
         if not action:
-            raise NotFoundError(message="AI action proposal not found or no longer pending")
+            raise NotFoundError(message="AI action proposal not found")
+        if action.status == "executed" and action.result_json:
+            return AIActionExecutionResponse(
+                proposal_id=action.id,
+                action_type=action.action_type,
+                status="executed",
+                result=json.loads(action.result_json),
+            ).model_dump()
         expires_at = action.expires_at
         normalized_expiry = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=UTC)
-        if normalized_expiry <= datetime.now(UTC):
+        if normalized_expiry <= datetime.now(UTC) and action.status == "pending":
             action.status = "expired"
             await db.commit()
             raise APIException(
@@ -1390,25 +1493,73 @@ class AIDomainService:
             )
 
         action.status = "executing"
-        await db.commit()
+        action.executing_started_at = datetime.now(UTC)
+        action.attempt_count += 1
+        existing_task = await self.task_service.repository.get_by_ai_action_id(
+            db,
+            ai_action_id=action.id,
+            organization_id=organization_id,
+        )
+        if existing_task is not None:
+            result = task_to_dict(existing_task)
+            action.status = "executed"
+            action.result_json = json.dumps(result, default=str)
+            action.executed_at = datetime.now(UTC)
+            await db.commit()
+            return AIActionExecutionResponse(
+                proposal_id=action.id,
+                action_type=action.action_type,
+                status="executed",
+                result=result,
+            ).model_dump()
+        assigned_to = requested.assigned_to or await self._default_task_assignee(
+            db, current_user, organization_id
+        )
         task_payload = TaskCreate(
             title=requested.title,
             description=requested.description,
             priority=requested.priority,
             due_date=requested.due_date,
             status="Pending",
-            assigned_to=current_user.id,
+            assigned_to=assigned_to,
+            project_id=requested.project_id,
+            lead_id=requested.lead_id,
+            contact_id=requested.contact_id,
+            company_id=requested.company_id,
+            deal_id=requested.deal_id,
+            ticket_id=requested.ticket_id,
         )
         try:
-            result = await self.task_service.create_task(db, task_payload, current_user)
-        except Exception:
-            action.status = "failed"
+            result = await self.task_service.create_task(
+                db,
+                task_payload,
+                current_user,
+                ai_action_id=action.id,
+                commit=False,
+                notify=False,
+            )
+            action.status = "executed"
+            action.result_json = json.dumps(result, default=str)
+            action.executed_at = datetime.now(UTC)
             await db.commit()
+        except Exception:
+            await db.rollback()
             raise
-        action.status = "executed"
-        action.result_json = json.dumps(result, default=str)
-        action.executed_at = datetime.now(UTC)
-        await db.commit()
+        created_task = await self.task_service.repository.get_by_ai_action_id(
+            db,
+            ai_action_id=action.id,
+            organization_id=organization_id,
+        )
+        if created_task is not None:
+            try:
+                await self.task_service.notify_created(db, created_task, current_user)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                logger.warning(
+                    "AI-created task notification failed",
+                    extra={"action_id": action.id, "task_id": created_task.id},
+                )
         return AIActionExecutionResponse(
             proposal_id=action.id,
             action_type=action.action_type,
@@ -1830,13 +1981,19 @@ class AIDomainService:
         ]
 
     async def get_ai_usage_stats(self, db: AsyncSession, current_user: User) -> dict:
-        totals = await self.repository.usage_totals(db, current_user.organization_id or "")
+        organization_id = self._organization_id(current_user)
+        totals = await self.repository.usage_totals(db, organization_id)
+        config = await self.repository.get_organization_config(db, organization_id)
         subscription = await self.repository.get_subscription_for_update(
-            db, current_user.organization_id or ""
+            db, organization_id
         )
         return totals | {
             "credits_remaining": subscription.ai_credits if subscription else 0,
-            "monthly_cost_limit_usd": settings.AI_MONTHLY_COST_LIMIT_USD,
+            "monthly_cost_limit_usd": (
+                config.monthly_cost_limit_usd
+                if config and config.monthly_cost_limit_usd is not None
+                else settings.AI_MONTHLY_COST_LIMIT_USD
+            ),
         }
 
     async def search_crm(
@@ -2229,45 +2386,18 @@ class AIDomainService:
 
     @staticmethod
     def _configured_models() -> list[tuple[str, str]]:
-        models: list[tuple[str, str]] = []
-        if ai_provider_gateway.has_usable_api_key(settings.OPENAI_API_KEY):
-            openai_model = (
-                settings.AI_MODEL
-                if settings.AI_PROVIDER == "openai"
-                else settings.AI_OPENAI_FALLBACK_MODEL
-            )
-            if openai_model:
-                models.append(("openai", openai_model))
-        if ai_provider_gateway.has_usable_api_key(settings.ANTHROPIC_API_KEY):
-            anthropic_model = (
-                settings.AI_MODEL
-                if settings.AI_PROVIDER == "anthropic"
-                else settings.AI_ANTHROPIC_FALLBACK_MODEL
-            )
-            if anthropic_model:
-                models.append(("anthropic", anthropic_model))
-        if ai_provider_gateway.has_usable_api_key(settings.GEMINI_API_KEY):
-            gemini_model = (
-                settings.AI_MODEL
-                if settings.AI_PROVIDER == "gemini"
-                else settings.AI_GEMINI_FALLBACK_MODEL
-            )
-            if gemini_model:
-                models.append(("gemini", gemini_model))
-        if (
-            ai_provider_gateway.has_usable_api_key(settings.SUSANOOX_AI_KEY)
-            and settings.AI_PROVIDER == "susanoox"
-            and settings.AI_MODEL
-        ):
-            models.append(("susanoox", settings.AI_MODEL))
-        return models
+        if not ai_provider_gateway.has_usable_api_key(settings.SUSANOOX_AI_KEY):
+            return []
+        return [
+            ("susanoox", model)
+            for model in dict.fromkeys([settings.AI_MODEL, *settings.susanoox_model_pool])
+        ]
 
     async def list_ai_models(self, db: AsyncSession, current_user: User) -> list[dict]:
         config = await self.repository.get_organization_config(
-            db, current_user.organization_id or ""
+            db, self._organization_id(current_user)
         )
-        active_provider = config.provider if config and config.provider else settings.AI_PROVIDER
-        active_model = config.model_name if config and config.model_name else settings.AI_MODEL
+        active_provider, active_model = self.runtime.configured_provider_model(config)
         return [
             {
                 "model_id": model,
@@ -2288,7 +2418,7 @@ class AIDomainService:
         provider, model = matches[0]
         await self.repository.set_organization_model(
             db,
-            organization_id=current_user.organization_id or "",
+            organization_id=self._organization_id(current_user),
             provider=provider,
             model_name=model,
         )
@@ -2297,10 +2427,9 @@ class AIDomainService:
 
     async def get_organization_config(self, db: AsyncSession, current_user: User) -> dict:
         config = await self.repository.get_organization_config(
-            db, current_user.organization_id or ""
+            db, self._organization_id(current_user)
         )
-        provider = config.provider if config and config.provider else settings.AI_PROVIDER
-        model = config.model_name if config and config.model_name else settings.AI_MODEL
+        provider, model = self.runtime.configured_provider_model(config)
         icp_profile = None
         if config and config.icp_profile_json:
             try:
@@ -2339,14 +2468,14 @@ class AIDomainService:
                 )
             await self.repository.set_organization_model(
                 db,
-                organization_id=current_user.organization_id or "",
+                organization_id=self._organization_id(current_user),
                 provider=matches[0][0],
                 model_name=matches[0][1],
             )
         update_icp = "icp_profile" in payload.model_fields_set
         await self.repository.update_organization_config(
             db,
-            organization_id=current_user.organization_id or "",
+            organization_id=self._organization_id(current_user),
             enabled=payload.enabled,
             monthly_cost_limit_usd=payload.monthly_cost_limit_usd,
             icp_profile_json=(

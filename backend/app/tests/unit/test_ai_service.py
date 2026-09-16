@@ -33,6 +33,7 @@ from app.schemas.ai import (
 )
 from app.schemas.dashboard import DashboardAiInsightsResponse
 from app.services.ai_domain_service import AIDomainService
+from app.services.ai_tool_registry import AIToolRegistry
 from app.tests.mock_helpers import as_async_mock, as_mock, replace_attr, require_await
 
 
@@ -107,6 +108,7 @@ def _repository() -> Any:
     repository.create_prompt = AsyncMock()
     repository.create_action = AsyncMock(return_value=SimpleNamespace(id="proposal-1"))
     repository.get_pending_action = AsyncMock()
+    repository.get_action_for_execution = AsyncMock()
     return repository
 
 
@@ -128,6 +130,17 @@ def _chat_runtime(plan: CRMChatPlan, output: AIChatGeneratedOutput) -> AsyncMock
     return runtime
 
 
+def _fallback_tool_registry() -> Any:
+    registry = AsyncMock(spec=AIToolRegistry)
+    registry.tool_name_for_plan.side_effect = AIToolRegistry.tool_name_for_plan
+
+    async def execute_plan(_context: Any, plan: CRMSearchPlan, *, fallback: Any) -> Any:
+        return await fallback(plan)
+
+    registry.execute_plan.side_effect = execute_plan
+    return registry
+
+
 def _lead_result() -> LeadIntelligenceResponse:
     return LeadIntelligenceResponse(
         lead_id="lead-1",
@@ -140,16 +153,18 @@ def _lead_result() -> LeadIntelligenceResponse:
     )
 
 
-def test_configured_models_includes_gemini_without_hard_coded_model(monkeypatch):
-    monkeypatch.setattr("app.services.ai_domain_service.settings.OPENAI_API_KEY", None)
-    monkeypatch.setattr("app.services.ai_domain_service.settings.ANTHROPIC_API_KEY", None)
-    monkeypatch.setattr("app.services.ai_domain_service.settings.GEMINI_API_KEY", "set")
-    monkeypatch.setattr("app.services.ai_domain_service.settings.AI_PROVIDER", "gemini")
+def test_configured_models_contains_only_susanoox(monkeypatch):
+    monkeypatch.setattr("app.services.ai_domain_service.settings.SUSANOOX_AI_KEY", "set")
+    monkeypatch.setattr("app.services.ai_domain_service.settings.AI_MODEL", "susanoox-fast")
     monkeypatch.setattr(
-        "app.services.ai_domain_service.settings.AI_MODEL", "configured-gemini-model"
+        "app.services.ai_domain_service.settings.SUSANOOX_MODEL_POOL",
+        "susanoox-fast,susanoox-large",
     )
 
-    assert AIDomainService._configured_models() == [("gemini", "configured-gemini-model")]
+    assert AIDomainService._configured_models() == [
+        ("susanoox", "susanoox-fast"),
+        ("susanoox", "susanoox-large"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -169,7 +184,7 @@ async def test_evaluate_lead_score_is_tenant_scoped_and_persists_history():
     assert result["score"] == 88
     assert result["conversion_probability"] == 72
     assert result["run_id"] == "run-1"
-    instructions = require_await(runtime.execute).kwargs["user_prompt"]
+    instructions = require_await(runtime.execute).kwargs["task_instructions"]
     assert "return 70 for 70%, not 0.7" in instructions
     as_async_mock(repository.get_lead).assert_awaited_once_with(
         db, lead_id="lead-1", organization_id="org-1", access=ANY
@@ -401,9 +416,8 @@ async def test_icp_match_uses_current_organization_profile():
     result = await service.evaluate_icp_match(db, "lead-1", _user())
 
     assert result["overall_fit"] == 90
-    context = require_await(runtime.execute).kwargs["user_prompt"]
-    assert '"organization_icp_profile"' in context
-    assert '"Software"' in context
+    context = require_await(runtime.execute).kwargs["provider_context"]
+    assert context["organization_icp_profile"]["industries"] == ["Software"]
 
 
 @pytest.mark.asyncio
@@ -416,7 +430,9 @@ async def test_ai_configuration_update_is_tenant_scoped():
         monthly_cost_limit_usd=25.0,
         icp_profile_json='{"industries":["Software"]}',
     )
-    service = AIDomainService(repository=repository, runtime=AsyncMock())
+    runtime = AsyncMock()
+    runtime.configured_provider_model = Mock(return_value=("susanoox", "susanoox-fast"))
+    service = AIDomainService(repository=repository, runtime=runtime)
     db = AsyncMock(spec=AsyncSession)
     payload = AIOrganizationConfigUpdate(
         enabled=False,
@@ -500,7 +516,11 @@ async def test_sales_assistant_planner_receives_only_permitted_crm_catalog():
         operations=[CRMSearchPlan(intent="count", entity_type="deal", result_key="deals")]
     )
     output = AIChatGeneratedOutput(response="One matching deal was found")
-    service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
+    service = AIDomainService(
+        repository=repository,
+        runtime=_chat_runtime(plan, output),
+        tool_registry=_fallback_tool_registry(),
+    )
     replace_attr(
         service,
         "_permission_keys",
@@ -511,10 +531,10 @@ async def test_sales_assistant_planner_receives_only_permitted_crm_catalog():
     result = await service.sales_assistant_chat(db, "Expansion", None, _user())
 
     assert result["conversation_id"] == "conversation-1"
-    planner_prompt = as_async_mock(service.runtime.execute).await_args_list[0].kwargs["user_prompt"]  # type: ignore[attr-defined]
-    assert '"deal"' in planner_prompt
-    assert '"task"' in planner_prompt
-    assert '"lead"' not in planner_prompt
+    planner_context = as_async_mock(service.runtime.execute).await_args_list[0].kwargs["provider_context"]  # type: ignore[attr-defined]
+    assert "deal" in planner_context["authorized_crm_catalog"]
+    assert "task" in planner_context["authorized_crm_catalog"]
+    assert "lead" not in planner_context["authorized_crm_catalog"]
     assert result["result_blocks"][0]["result_count"] == 1
     as_async_mock(repository.create_prompt).assert_awaited_once()
 
@@ -533,7 +553,11 @@ async def test_sales_assistant_drops_evidence_not_present_in_authorized_context(
             AIEvidence(entity_type="deal", entity_id="foreign-deal", label="Invalid"),
         ],
     )
-    service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
+    service = AIDomainService(
+        repository=repository,
+        runtime=_chat_runtime(plan, output),
+        tool_registry=_fallback_tool_registry(),
+    )
     replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
 
     result = await service.sales_assistant_chat(
@@ -555,7 +579,7 @@ async def test_sales_assistant_persists_only_supported_confirmation_actions():
             AIActionProposal(
                 action_type="create_task",
                 title="Follow up",
-                payload={"title": "Follow up", "priority": "High"},
+                payload={"title": "Follow up", "priority": "High", "status": "Completed"},
             ),
             AIActionProposal(
                 action_type="update_record",
@@ -564,7 +588,11 @@ async def test_sales_assistant_persists_only_supported_confirmation_actions():
             ),
         ],
     )
-    service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
+    service = AIDomainService(
+        repository=repository,
+        runtime=_chat_runtime(plan, output),
+        tool_registry=_fallback_tool_registry(),
+    )
     replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "tasks:read"}))
 
     result = await service.sales_assistant_chat(
@@ -573,6 +601,7 @@ async def test_sales_assistant_persists_only_supported_confirmation_actions():
 
     assert len(result["proposed_actions"]) == 1
     assert result["proposed_actions"][0]["proposal_id"] == "proposal-1"
+    assert result["proposed_actions"][0]["payload"]["status"] == "Pending"
     assert require_await(repository.create_action).kwargs["organization_id"] == "org-1"
     assert require_await(repository.create_action).kwargs["user_id"] == "user-1"
 
@@ -592,7 +621,11 @@ async def test_sales_assistant_executes_database_count_and_returns_result_block(
         ]
     )
     output = AIChatGeneratedOutput(response="There are 7 companies.")
-    service = AIDomainService(repository=repository, runtime=_chat_runtime(plan, output))
+    service = AIDomainService(
+        repository=repository,
+        runtime=_chat_runtime(plan, output),
+        tool_registry=_fallback_tool_registry(),
+    )
     replace_attr(
         service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
     )
@@ -629,6 +662,7 @@ async def test_sales_assistant_executes_multiple_authorized_operations():
     service = AIDomainService(
         repository=repository,
         runtime=_chat_runtime(plan, AIChatGeneratedOutput(response="Summary")),
+        tool_registry=_fallback_tool_registry(),
     )
     replace_attr(
         service,
@@ -719,6 +753,7 @@ async def test_sales_assistant_uses_tenant_scoped_report_service():
         repository=repository,
         runtime=_chat_runtime(plan, AIChatGeneratedOutput(response="There are 4 open deals.")),
         report_service_instance=reports,
+        tool_registry=_fallback_tool_registry(),
     )
     replace_attr(
         service,
@@ -748,6 +783,7 @@ async def test_sales_assistant_uses_scoped_conversation_history_for_follow_up():
     service = AIDomainService(
         repository=repository,
         runtime=_chat_runtime(plan, AIChatGeneratedOutput(response="Acme is in software.")),
+        tool_registry=_fallback_tool_registry(),
     )
     replace_attr(
         service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
@@ -762,8 +798,8 @@ async def test_sales_assistant_uses_scoped_conversation_history_for_follow_up():
         organization_id="org-1",
         user_id="user-1",
     )
-    planner_prompt = as_async_mock(service.runtime.execute).await_args_list[0].kwargs["user_prompt"]  # type: ignore[attr-defined]
-    assert "Find Acme" in planner_prompt
+    planner_context = as_async_mock(service.runtime.execute).await_args_list[0].kwargs["provider_context"]  # type: ignore[attr-defined]
+    assert planner_context["recent_conversation"][0]["user"] == "Find Acme"
 
 
 @pytest.mark.asyncio
@@ -791,11 +827,13 @@ async def test_sales_assistant_clarification_does_not_query_database():
 @pytest.mark.asyncio
 async def test_confirm_action_requires_underlying_task_permission():
     repository = _repository()
-    as_mock(repository.get_pending_action).return_value = SimpleNamespace(
+    as_mock(repository.get_action_for_execution).return_value = SimpleNamespace(
         id="proposal-1",
         action_type="create_task",
         payload_json='{"title":"Follow up"}',
         expires_at=datetime.now(UTC) + timedelta(minutes=10),
+        status="pending",
+        result_json=None,
     )
     tasks = AsyncMock()
     service = AIDomainService(
@@ -825,9 +863,12 @@ async def test_confirm_action_is_scoped_and_creates_task_for_current_user():
         status="pending",
         result_json=None,
         executed_at=None,
+        executing_started_at=None,
+        attempt_count=0,
     )
-    as_mock(repository.get_pending_action).return_value = action
+    as_mock(repository.get_action_for_execution).return_value = action
     tasks = AsyncMock()
+    tasks.repository.get_by_ai_action_id = AsyncMock(side_effect=[None, None])
     as_mock(tasks.create_task).return_value = {"id": "task-1", "title": "Follow up"}
     service = AIDomainService(
         repository=repository,
@@ -842,17 +883,63 @@ async def test_confirm_action_is_scoped_and_creates_task_for_current_user():
 
     result = await service.confirm_action(db, "proposal-1", actor)
 
-    as_async_mock(repository.get_pending_action).assert_awaited_once_with(
+    as_async_mock(repository.get_action_for_execution).assert_awaited_once_with(
         db,
         action_id="proposal-1",
         organization_id="org-1",
         user_id="user-1",
     )
     task_payload = require_await(tasks.create_task).args[1]
-    assert task_payload.assigned_to == "user-1"
+    assert task_payload.assigned_to == "foreign-user"
     assert task_payload.status == "Pending"
+    assert require_await(tasks.create_task).kwargs == {
+        "ai_action_id": "proposal-1",
+        "commit": False,
+        "notify": False,
+    }
     assert result["status"] == "executed"
     assert action.status == "executed"
+
+
+@pytest.mark.asyncio
+async def test_confirm_action_notification_failure_does_not_report_task_failure():
+    repository = _repository()
+    action = SimpleNamespace(
+        id="proposal-1",
+        action_type="create_task",
+        payload_json='{"title":"Follow up","assigned_to":"user-1"}',
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+        status="pending",
+        result_json=None,
+        executed_at=None,
+        executing_started_at=None,
+        attempt_count=0,
+    )
+    as_mock(repository.get_action_for_execution).return_value = action
+    tasks = AsyncMock()
+    created_task = SimpleNamespace(id="task-1")
+    tasks.repository.get_by_ai_action_id = AsyncMock(
+        side_effect=[None, created_task]
+    )
+    as_mock(tasks.create_task).return_value = {"id": "task-1", "title": "Follow up"}
+    tasks.notify_created.side_effect = RuntimeError("notification unavailable")
+    service = AIDomainService(
+        repository=repository,
+        runtime=AsyncMock(),
+        task_service_instance=tasks,
+    )
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "tasks:create"})
+    )
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.confirm_action(db, "proposal-1", _user())
+
+    assert result["status"] == "executed"
+    assert result["result"]["id"] == "task-1"
+    assert action.status == "executed"
+    assert as_async_mock(db.commit).await_count == 1
+    as_async_mock(db.rollback).assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -1480,7 +1567,7 @@ async def test_dashboard_insights_persist_under_platform_admin_selected_organiza
     output = DashboardAiInsightsResponse(summary="Pipeline summary", insights=[], risk_deals=[])
     service = AIDomainService(repository=repository, runtime=_runtime(output))
     actor = _user(organization_id=None, is_platform_admin=True)
-    actor._request_organization_id = "selected-org"
+    actor.__dict__["_request_organization_id"] = "selected-org"
 
     await service.generate_dashboard_insights(
         AsyncMock(spec=AsyncSession),

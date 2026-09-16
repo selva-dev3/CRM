@@ -444,6 +444,31 @@ class CRMSearchFilter(BaseModel):
 
 
 class CRMSearchPlan(BaseModel):
+    tool_name: Literal[
+        "search_leads",
+        "get_lead",
+        "search_contacts",
+        "get_contact",
+        "search_companies",
+        "get_company",
+        "search_deals",
+        "get_deal",
+        "get_tasks",
+        "get_meetings",
+        "get_sales_pipeline",
+        "get_dashboard_metrics",
+        "search_projects",
+        "search_calls",
+        "search_emails",
+        "search_notes",
+        "search_documents",
+        "search_products",
+        "search_quotes",
+        "search_invoices",
+        "search_calendar_events",
+        "search_activities",
+        "search_users",
+    ] | None = None
     intent: Literal["list", "detail", "count", "aggregate", "comparison"] = "list"
     entity_type: Literal[
         "lead",
@@ -468,6 +493,7 @@ class CRMSearchPlan(BaseModel):
     report_type: ReportTypeEnum | None = None
     result_key: str | None = Field(default=None, min_length=1, max_length=50)
     title: str | None = Field(default=None, min_length=1, max_length=120)
+    record_id: str | None = Field(default=None, min_length=1, max_length=100)
     text_query: str | None = None
     status: str | None = None
     filters: list[CRMSearchFilter] = Field(default_factory=list, max_length=10)
@@ -504,6 +530,10 @@ class CRMSearchPlan(BaseModel):
             raise ValueError("Report queries require report_type")
         if self.entity_type != "report" and self.report_type:
             raise ValueError("report_type requires the report entity")
+        if self.intent == "detail" and not self.record_id:
+            raise ValueError("Detail queries require record_id")
+        if self.intent != "detail" and self.record_id:
+            raise ValueError("record_id requires detail intent")
         if self.intent == "aggregate" and not (self.aggregate and self.aggregate_field):
             raise ValueError("Aggregate queries require aggregate and aggregate_field")
         if self.intent != "aggregate" and (self.aggregate or self.aggregate_field):

@@ -1,4 +1,7 @@
-import { getOrganizationContext } from '@/lib/organization-context';
+import {
+  getOrganizationContext,
+  ORGANIZATION_CONTEXT_CHANGED_EVENT,
+} from '@/lib/organization-context';
 import { getAccessToken, setAccessToken, clearAccessToken } from '@/lib/auth-session';
 
 // Central API Client for CRM Backend Integration (FastAPI)
@@ -45,6 +48,11 @@ let authGeneration = 0;
 let explicitLogoutInProgress = false;
 let refreshChannel: BroadcastChannel | null = null;
 const activeGuardedStreams = new Set<() => void>();
+export const AUTH_SESSION_CHANGED_EVENT = 'crm:auth-session-changed';
+
+function announceAuthSessionChange(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_SESSION_CHANGED_EVENT));
+}
 
 declare const authSessionGenerationBrand: unique symbol;
 export type AuthSessionGeneration = number & { readonly [authSessionGenerationBrand]: true };
@@ -59,6 +67,10 @@ export function isAuthSessionGenerationCurrent(generation: AuthSessionGeneration
 
 function cancelActiveGuardedStreams(): void {
   for (const cancel of Array.from(activeGuardedStreams)) cancel();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(ORGANIZATION_CONTEXT_CHANGED_EVENT, cancelActiveGuardedStreams);
 }
 
 function getRefreshChannel(): BroadcastChannel | null {
@@ -82,6 +94,7 @@ export function invalidateAuthSession(): void {
   refreshGeneration = null;
   authGeneration += 1;
   explicitLogoutInProgress = true;
+  announceAuthSessionChange();
 }
 
 /** Re-enable refresh after a new login/session has been established. */
@@ -95,6 +108,7 @@ export function markAuthSessionActive(): void {
   refreshGeneration = null;
   authGeneration += 1;
   explicitLogoutInProgress = false;
+  announceAuthSessionChange();
 }
 
 export function clearSessionToken(): void {
@@ -180,6 +194,7 @@ function guardResponseStream(
   response: Response,
   endpoint: string,
   generation: number,
+  organizationId: string | null,
 ): Response {
   if (!response.body || !canRefresh(endpoint)) return response;
   const reader = response.body.getReader();
@@ -206,9 +221,9 @@ function guardResponseStream(
     },
     async pull(controller) {
       try {
-        assertSessionOwnership(endpoint, generation);
+        assertSessionOwnership(endpoint, generation, organizationId);
         const chunk = await reader.read();
-        assertSessionOwnership(endpoint, generation);
+        assertSessionOwnership(endpoint, generation, organizationId);
         if (chunk.done) {
           finish();
           controller.close();
@@ -243,8 +258,10 @@ async function fetchWithTimeout(
   input: RequestInfo | URL,
   init: RequestInit,
   timeoutMs: number,
+  retainAbortThroughBody = false,
 ): Promise<Response> {
   const controller = new AbortController();
+  let abortListenerOwnedByBody = false;
   let timedOut = false;
   const timeoutId = setTimeout(() => {
     timedOut = true;
@@ -254,8 +271,59 @@ async function fetchWithTimeout(
   const abortFromCaller = () => controller.abort(callerSignal?.reason);
 
   callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  if (callerSignal?.aborted) abortFromCaller();
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    if (!retainAbortThroughBody || !response.ok || !response.body || !callerSignal) return response;
+    const reader = response.body.getReader();
+    let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      callerSignal.removeEventListener('abort', abortBody);
+      callerSignal.removeEventListener('abort', abortFromCaller);
+    };
+    const abortBody = () => {
+      if (finished) return;
+      abortFromCaller();
+      finish();
+      const error = new DOMException('The stream was cancelled.', 'AbortError');
+      void reader.cancel(error).catch(() => undefined);
+      bodyController?.error(error);
+    };
+    const body = new ReadableStream<Uint8Array>({
+      start(streamController) {
+        bodyController = streamController;
+        callerSignal.addEventListener('abort', abortBody, { once: true });
+        if (callerSignal.aborted) abortBody();
+      },
+      async pull(streamController) {
+        if (finished) return;
+        try {
+          const chunk = await reader.read();
+          if (finished) return;
+          if (chunk.done) {
+            finish();
+            streamController.close();
+          } else streamController.enqueue(chunk.value);
+        } catch (error) {
+          if (finished) return;
+          finish();
+          streamController.error(error);
+        }
+      },
+      async cancel(reason) {
+        finish();
+        await reader.cancel(reason);
+      },
+    }, { highWaterMark: 0 });
+    abortListenerOwnedByBody = true;
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
   } catch (error) {
     if (timedOut) {
       throw new ApiError('The request timed out. Please try again.', 'timeout');
@@ -266,7 +334,7 @@ async function fetchWithTimeout(
     throw new ApiError('Unable to reach the server. Please check your connection.', 'network');
   } finally {
     clearTimeout(timeoutId);
-    callerSignal?.removeEventListener('abort', abortFromCaller);
+    if (!abortListenerOwnedByBody) callerSignal?.removeEventListener('abort', abortFromCaller);
   }
 }
 
@@ -390,9 +458,17 @@ function getRefreshRequest(requestGeneration: number): Promise<boolean> {
   return refreshRequest;
 }
 
-function assertSessionOwnership(endpoint: string, generation: number): void {
+function assertSessionOwnership(
+  endpoint: string,
+  generation: number,
+  organizationId: string | null,
+): void {
   if (!canRefresh(endpoint)) return;
-  if (explicitLogoutInProgress || generation !== authGeneration) {
+  if (
+    explicitLogoutInProgress
+    || generation !== authGeneration
+    || organizationId !== getOrganizationContext()
+  ) {
     throw new DOMException('The authenticated request belongs to a superseded session.', 'AbortError');
   }
 }
@@ -436,7 +512,8 @@ async function request<T>(
   allowRefresh = true,
 ): Promise<ApiResponse<T>> {
   const requestGeneration = authGeneration;
-  assertSessionOwnership(endpoint, requestGeneration);
+  const requestOrganizationId = getOrganizationContext();
+  assertSessionOwnership(endpoint, requestGeneration, requestOrganizationId);
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
@@ -463,11 +540,11 @@ async function request<T>(
     headers,
     credentials: options.credentials ?? 'include',
   }, options.timeoutMs ?? API_REQUEST_TIMEOUT_MS);
-  assertSessionOwnership(endpoint, requestGeneration);
+  assertSessionOwnership(endpoint, requestGeneration, requestOrganizationId);
 
   if (response.status === 401 && allowRefresh && canRefresh(endpoint)) {
     const refreshed = await getRefreshRequest(requestGeneration);
-    assertSessionOwnership(endpoint, requestGeneration);
+    assertSessionOwnership(endpoint, requestGeneration, requestOrganizationId);
     if (refreshed) {
       const retryHeaders = { ...headers };
       applyAccessTokenHeader(endpoint, retryHeaders);
@@ -476,7 +553,7 @@ async function request<T>(
         headers: retryHeaders,
         credentials: options.credentials ?? 'include',
       }, options.timeoutMs ?? API_REQUEST_TIMEOUT_MS);
-      assertSessionOwnership(endpoint, requestGeneration);
+      assertSessionOwnership(endpoint, requestGeneration, requestOrganizationId);
     }
   }
 
@@ -485,12 +562,12 @@ async function request<T>(
       response,
       !endpoint.startsWith('/public/'),
       headers['X-Organization-ID'] ?? null,
-      () => assertSessionOwnership(endpoint, requestGeneration),
+      () => assertSessionOwnership(endpoint, requestGeneration, requestOrganizationId),
     );
   }
 
   const responseData = await response.json();
-  assertSessionOwnership(endpoint, requestGeneration);
+  assertSessionOwnership(endpoint, requestGeneration, requestOrganizationId);
   return {
     data: responseData,
     headers: response.headers,
@@ -504,8 +581,8 @@ export async function openApiStream(
   signal?: AbortSignal,
 ): Promise<Response> {
   const requestGeneration = authGeneration;
-  assertSessionOwnership(endpoint, requestGeneration);
   const organizationId = getOrganizationContext();
+  assertSessionOwnership(endpoint, requestGeneration, organizationId);
   const options: RequestInit = {
     method: 'POST',
     headers: {
@@ -521,31 +598,33 @@ export async function openApiStream(
     `${BASE_URL}${endpoint}`,
     options,
     API_REQUEST_TIMEOUT_MS,
+    true,
   );
-  assertSessionOwnership(endpoint, requestGeneration);
+  assertSessionOwnership(endpoint, requestGeneration, organizationId);
   if (
     response.status === 401 &&
     canRefresh(endpoint) &&
     (await getRefreshRequest(requestGeneration))
   ) {
-    assertSessionOwnership(endpoint, requestGeneration);
+    assertSessionOwnership(endpoint, requestGeneration, organizationId);
     applyAccessTokenHeader(endpoint, options.headers as Record<string, string>);
     response = await fetchWithTimeout(
       `${BASE_URL}${endpoint}`,
       options,
       API_REQUEST_TIMEOUT_MS,
+      true,
     );
-    assertSessionOwnership(endpoint, requestGeneration);
+    assertSessionOwnership(endpoint, requestGeneration, organizationId);
   }
   if (!response.ok) {
     return throwResponseError(
       response,
       true,
       organizationId,
-      () => assertSessionOwnership(endpoint, requestGeneration),
+      () => assertSessionOwnership(endpoint, requestGeneration, organizationId),
     );
   }
-  return guardResponseStream(response, endpoint, requestGeneration);
+  return guardResponseStream(response, endpoint, requestGeneration, organizationId);
 }
 
 const mainClient = async function <T>(

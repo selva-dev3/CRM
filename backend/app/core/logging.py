@@ -4,6 +4,7 @@ import re
 import sys
 
 from app.core.config import settings
+from app.core.request_context import get_request_id
 
 
 class RequestIDFilter(logging.Filter):
@@ -11,7 +12,7 @@ class RequestIDFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if not hasattr(record, "request_id"):
-            record.request_id = "-"
+            record.request_id = get_request_id() or "-"
         return True
 
 

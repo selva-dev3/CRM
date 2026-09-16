@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { ActionPreview } from '@/components/features/ai/action-preview';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import {
@@ -19,6 +20,12 @@ import {
 } from '@/lib/api/ai';
 import { PERMISSIONS } from '@/lib/permissions';
 import { getErrorMessage } from '@/lib/utils';
+import {
+  AUTH_SESSION_CHANGED_EVENT,
+  captureAuthSessionGeneration,
+  isAuthSessionGenerationCurrent,
+} from '@/lib/api/client';
+import { getOrganizationContext, ORGANIZATION_CONTEXT_CHANGED_EVENT } from '@/lib/organization-context';
 
 interface ChatMessage {
   id: string;
@@ -124,12 +131,11 @@ function AssistantMessage({
         {!!message.actions?.length && (
           <div className="mt-4 space-y-2">
             {message.actions.map((action) => action.proposal_id && (
-              <div key={action.proposal_id} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                <span className="text-xs text-amber-900">{action.title}</span>
+              <ActionPreview key={action.proposal_id} action={action} controls={
                 <Button type="button" size="sm" variant="outline" disabled={executingActionId === action.proposal_id || executedActionIds.has(action.proposal_id)} onClick={() => onConfirm(action.proposal_id!)}>
                   {executedActionIds.has(action.proposal_id) ? 'Confirmed' : executingActionId === action.proposal_id ? 'Confirming…' : 'Confirm'}
                 </Button>
-              </div>
+              } />
             ))}
           </div>
         )}
@@ -167,38 +173,60 @@ export default function AIIntelligencePage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [executingActionId, setExecutingActionId] = useState<string>();
   const [executedActionIds, setExecutedActionIds] = useState<Set<string>>(new Set());
+  const [contextVersion, setContextVersion] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const activeRequestRef = useRef<AbortController | undefined>(undefined);
+  const conversationSelectionRef = useRef(0);
 
   const loadConversations = async () => {
     if (!canRead) return;
+    const generation = captureAuthSessionGeneration();
+    const organizationId = getOrganizationContext();
+    const isCurrent = () => isAuthSessionGenerationCurrent(generation)
+      && getOrganizationContext() === organizationId;
     try {
       const result = await aiService.listConversations(conversationPage, conversationPageSize);
+      if (!isCurrent()) return;
       setConversations(result.items);
       setConversationTotal(result.total);
     }
-    catch (requestError) { setError(getErrorMessage(requestError, 'Chat history could not be loaded.')); }
-    finally { setIsHistoryLoading(false); }
+    catch (requestError) {
+      if (isCurrent()) {
+        setError(getErrorMessage(requestError, 'Chat history could not be loaded.'));
+      }
+    }
+    finally {
+      if (isCurrent()) setIsHistoryLoading(false);
+    }
   };
 
   useEffect(() => {
     if (!canRead) return;
     let active = true;
+    const generation = captureAuthSessionGeneration();
+    const organizationId = getOrganizationContext();
+    const isCurrent = () => active && isAuthSessionGenerationCurrent(generation)
+      && getOrganizationContext() === organizationId;
     aiService.listConversations(conversationPage, conversationPageSize)
       .then((result) => {
-        if (active) {
+        if (isCurrent()) {
           setConversations(result.items);
           setConversationTotal(result.total);
         }
       })
       .catch((requestError) => {
-        if (active) setError(getErrorMessage(requestError, 'Chat history could not be loaded.'));
+        if (isCurrent()) setError(getErrorMessage(requestError, 'Chat history could not be loaded.'));
       })
-      .finally(() => { if (active) setIsHistoryLoading(false); });
+      .finally(() => { if (isCurrent()) setIsHistoryLoading(false); });
     return () => { active = false; };
-  }, [canRead, conversationPage]);
+  }, [canRead, conversationPage, contextVersion]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, status]);
 
   const newChat = () => {
+    conversationSelectionRef.current += 1;
+    activeRequestRef.current?.abort();
+    activeRequestRef.current = undefined;
+    setIsSending(false);
     setConversationId(undefined);
     setMessages([]);
     setError(undefined);
@@ -206,11 +234,49 @@ export default function AIIntelligencePage() {
     setSidebarOpen(false);
   };
 
+  useEffect(() => {
+    const reset = () => {
+      conversationSelectionRef.current += 1;
+      activeRequestRef.current?.abort();
+      activeRequestRef.current = undefined;
+      setConversationId(undefined);
+      setMessages([]);
+      setError(undefined);
+      setStatus(undefined);
+      setIsSending(false);
+      setExecutingActionId(undefined);
+      setExecutedActionIds(new Set());
+      setConversations([]);
+      setConversationTotal(0);
+      setIsHistoryLoading(true);
+      setContextVersion((version) => version + 1);
+      setSidebarOpen(false);
+    };
+    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
+    window.addEventListener(ORGANIZATION_CONTEXT_CHANGED_EVENT, reset);
+    return () => {
+      window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
+      window.removeEventListener(ORGANIZATION_CONTEXT_CHANGED_EVENT, reset);
+      activeRequestRef.current?.abort();
+    };
+  }, []);
+
   const openConversation = async (id: string) => {
+    conversationSelectionRef.current += 1;
+    const selection = conversationSelectionRef.current;
+    activeRequestRef.current?.abort();
+    activeRequestRef.current = undefined;
+    setIsSending(false);
+    const generation = captureAuthSessionGeneration();
+    const organizationId = getOrganizationContext();
+    const isCurrent = () => isAuthSessionGenerationCurrent(generation)
+      && getOrganizationContext() === organizationId
+      && conversationSelectionRef.current === selection;
     setError(undefined);
     setStatus('Loading conversation…');
     try {
       const conversation = await aiService.getConversation(id);
+      if (!isCurrent()) return;
       setConversationId(id);
       setMessages(conversation.messages.flatMap((message) => [
         { id: `${message.id}-user`, role: 'user' as const, text: message.user_prompt },
@@ -223,30 +289,51 @@ export default function AIIntelligencePage() {
       ]));
       setSidebarOpen(false);
     } catch (requestError) {
-      setError(getErrorMessage(requestError, 'Conversation could not be loaded.'));
-    } finally { setStatus(undefined); }
+      if (isCurrent()) {
+        setError(getErrorMessage(requestError, 'Conversation could not be loaded.'));
+      }
+    } finally {
+      if (isCurrent()) setStatus(undefined);
+    }
   };
 
   const deleteConversation = async (id: string) => {
+    const generation = captureAuthSessionGeneration();
+    const organizationId = getOrganizationContext();
+    const selection = conversationSelectionRef.current;
+    const isCurrent = () => isAuthSessionGenerationCurrent(generation)
+      && getOrganizationContext() === organizationId;
     try {
       await aiService.deleteConversation(id);
-      if (conversationId === id) newChat();
+      if (!isCurrent()) return;
+      if (conversationId === id && conversationSelectionRef.current === selection) newChat();
       setConversations((items) => items.filter((item) => item.id !== id));
     } catch (requestError) {
-      setError(getErrorMessage(requestError, 'Conversation could not be deleted.'));
+      if (isCurrent() && conversationSelectionRef.current === selection) {
+        setError(getErrorMessage(requestError, 'Conversation could not be deleted.'));
+      }
     }
   };
 
   const confirmAction = async (proposalId: string) => {
     if (executingActionId) return;
+    const generation = captureAuthSessionGeneration();
+    const organizationId = getOrganizationContext();
+    const isCurrent = () => isAuthSessionGenerationCurrent(generation)
+      && getOrganizationContext() === organizationId;
     setExecutingActionId(proposalId);
     setError(undefined);
     try {
       await aiService.confirmAction(proposalId);
+      if (!isCurrent()) return;
       setExecutedActionIds((items) => new Set(items).add(proposalId));
     } catch (requestError) {
-      setError(getErrorMessage(requestError, 'The proposed CRM action could not be completed.'));
-    } finally { setExecutingActionId(undefined); }
+      if (isCurrent()) {
+        setError(getErrorMessage(requestError, 'The proposed CRM action could not be completed.'));
+      }
+    } finally {
+      if (isCurrent()) setExecutingActionId(undefined);
+    }
   };
 
   const sendMessage = async (question: string) => {
@@ -263,13 +350,25 @@ export default function AIIntelligencePage() {
     setError(undefined);
     setLastQuestion(trimmed);
     setIsSending(true);
+    const generation = captureAuthSessionGeneration();
+    const organizationId = getOrganizationContext();
+    const controller = new AbortController();
+    activeRequestRef.current?.abort();
+    activeRequestRef.current = controller;
+    const ownsRequest = () => (
+      activeRequestRef.current === controller
+      && !controller.signal.aborted
+      && isAuthSessionGenerationCurrent(generation)
+      && getOrganizationContext() === organizationId
+    );
     try {
       const result = await aiService.streamChatAssistant(trimmed, conversationId, {
-        onStatus: setStatus,
-        onFallback: setStatus,
-        onDelta: (text) => setMessages((items) => items.map((item) =>
-          item.id === assistantId ? { ...item, text: item.text + text } : item)),
-      });
+        onStatus: (nextStatus) => { if (ownsRequest()) setStatus(nextStatus); },
+        onFallback: (nextStatus) => { if (ownsRequest()) setStatus(nextStatus); },
+        onDelta: (text) => { if (ownsRequest()) setMessages((items) => items.map((item) =>
+          item.id === assistantId ? { ...item, text: item.text + text } : item)); },
+      }, controller.signal);
+      if (!ownsRequest()) return;
       setConversationId(result.conversation_id);
       setMessages((items) => items.map((item) => item.id === assistantId ? {
         ...item,
@@ -284,6 +383,7 @@ export default function AIIntelligencePage() {
       } : item));
       await loadConversations();
     } catch (requestError) {
+      if (!ownsRequest()) return;
       setMessages((items) => items.map((item) =>
         item.id === assistantId
           ? { ...item, pending: false, failed: true, text: 'I could not complete that request.' }
@@ -291,8 +391,12 @@ export default function AIIntelligencePage() {
       ));
       setError(getErrorMessage(requestError, 'The AI assistant is temporarily unavailable.'));
     } finally {
-      setIsSending(false);
-      setStatus(undefined);
+      const wasCurrent = ownsRequest();
+      if (activeRequestRef.current === controller) activeRequestRef.current = undefined;
+      if (wasCurrent) {
+        setIsSending(false);
+        setStatus(undefined);
+      }
     }
   };
 

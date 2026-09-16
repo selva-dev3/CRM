@@ -9,6 +9,9 @@ from app.db.base import Base
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        UniqueConstraint("ai_action_id", name="uq_tasks_ai_action_id"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(
@@ -42,6 +45,9 @@ class Task(Base):
     )
     ticket_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("tickets.id", ondelete="SET NULL"), index=True
+    )
+    ai_action_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("ai_actions.id", ondelete="SET NULL"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

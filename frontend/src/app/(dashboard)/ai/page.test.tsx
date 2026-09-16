@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AIIntelligencePage from './page';
+import { setOrganizationContext } from '@/lib/organization-context';
 
 const mocks = vi.hoisted(() => ({
   canRead: true,
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getConversation: vi.fn(),
   deleteConversation: vi.fn(),
   streamChatAssistant: vi.fn(),
+  confirmAction: vi.fn(),
 }));
 
 vi.mock('@/hooks/use-has-permission', () => ({
@@ -25,6 +27,7 @@ vi.mock('@/lib/api/ai', () => ({
     getConversation: mocks.getConversation,
     deleteConversation: mocks.deleteConversation,
     streamChatAssistant: mocks.streamChatAssistant,
+    confirmAction: mocks.confirmAction,
   },
 }));
 
@@ -78,6 +81,7 @@ describe('AIIntelligencePage', () => {
         'How many open deals are there?',
         undefined,
         expect.any(Object),
+        expect.any(AbortSignal),
       ),
     );
     expect(await screen.findByText('There are 4 open deals.')).toBeInTheDocument();
@@ -113,6 +117,78 @@ describe('AIIntelligencePage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Pipeline review/ }));
     expect(await screen.findByText('Show pipeline')).toBeInTheDocument();
     expect(screen.getByText('Pipeline total is 500.')).toBeInTheDocument();
+  });
+
+  it('cancels an active stream before opening history and ignores its late result', async () => {
+    let completeStream: ((value: object) => void) | undefined;
+    mocks.streamChatAssistant.mockImplementation(() => new Promise((resolve) => {
+      completeStream = resolve;
+    }));
+    mocks.listConversations.mockResolvedValue({ items: [{
+      id: 'history-1', title: 'Saved conversation', model_name: 'model-a',
+      created_at: '2026-09-04T00:00:00Z', updated_at: '2026-09-04T00:00:00Z',
+    }], total: 1 });
+    mocks.getConversation.mockResolvedValue({ id: 'history-1', title: 'Saved conversation', messages: [{
+      id: 'prompt-1', user_prompt: 'Saved question', ai_response: 'Saved answer',
+      result_blocks: [], evidence: [], follow_up_questions: [],
+      model: 'model-a', fallback_used: false, created_at: '2026-09-04T00:00:00Z',
+    }] });
+    render(<AIIntelligencePage />);
+    fireEvent.change(screen.getByLabelText('Message CRM AI'), { target: { value: 'Live question' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(mocks.streamChatAssistant).toHaveBeenCalled());
+    const streamSignal = mocks.streamChatAssistant.mock.calls[0][3] as AbortSignal;
+    fireEvent.click(await screen.findByRole('button', { name: /^Saved conversation/ }));
+    expect(streamSignal.aborted).toBe(true);
+    expect(await screen.findByText('Saved answer')).toBeInTheDocument();
+    completeStream?.({ conversation_id: 'live-1', response: 'Late live answer',
+      result_blocks: [], evidence: [], proposed_actions: [], follow_up_questions: [] });
+    await waitFor(() => expect(screen.queryByText('Late live answer')).not.toBeInTheDocument());
+    expect(screen.getByText('Saved answer')).toBeInTheDocument();
+  });
+
+  it('keeps the newly selected chat when an older conversation deletion completes late', async () => {
+    let finishDelete: (() => void) | undefined;
+    mocks.listConversations.mockResolvedValue({ items: [
+      { id: 'chat-a', title: 'Conversation A', created_at: '2026-09-04T00:00:00Z', updated_at: '2026-09-04T00:00:00Z' },
+      { id: 'chat-b', title: 'Conversation B', created_at: '2026-09-04T00:00:00Z', updated_at: '2026-09-04T00:00:00Z' },
+    ], total: 2 });
+    mocks.getConversation.mockImplementation(async (id: string) => ({
+      id, title: id, messages: [{
+        id: `${id}-prompt`, user_prompt: `Question ${id}`, ai_response: `Answer ${id}`,
+        result_blocks: [], evidence: [], follow_up_questions: [],
+        model: 'model-a', fallback_used: false, created_at: '2026-09-04T00:00:00Z',
+      }],
+    }));
+    mocks.deleteConversation.mockImplementation(() => new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    }));
+    render(<AIIntelligencePage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Conversation A/ }));
+    expect(await screen.findByText('Answer chat-a')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Conversation A' }));
+    await waitFor(() => expect(mocks.deleteConversation).toHaveBeenCalledWith('chat-a'));
+    fireEvent.click(screen.getByRole('button', { name: /^Conversation B/ }));
+    expect(await screen.findByText('Answer chat-b')).toBeInTheDocument();
+
+    finishDelete?.();
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Conversation A/ })).not.toBeInTheDocument());
+    expect(screen.getByText('Answer chat-b')).toBeInTheDocument();
+  });
+
+  it('does not apply an old organization history response after context switch', async () => {
+    setOrganizationContext('org-a');
+    let finishOld: ((value: object) => void) | undefined;
+    mocks.listConversations.mockImplementationOnce(() => new Promise((resolve) => {
+      finishOld = resolve;
+    })).mockResolvedValue({ items: [], total: 0 });
+    render(<AIIntelligencePage />);
+    setOrganizationContext('org-b');
+    finishOld?.({ items: [{ id: 'old-1', title: 'Old organization history' }], total: 1 });
+    await waitFor(() => expect(mocks.listConversations).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Old organization history')).not.toBeInTheDocument();
+    setOrganizationContext(null);
   });
 
   it('shows retry without fabricating an answer when providers fail', async () => {

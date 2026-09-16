@@ -171,6 +171,8 @@ export interface AIUsageStats {
   tokens_used_this_month: number;
   estimated_cost_usd: number;
   request_count: number;
+  unknown_pricing_request_count: number;
+  pricing_status: 'known' | 'partial';
   ai_credits_remaining?: number | null;
   monthly_cost_limit_usd?: number | null;
 }

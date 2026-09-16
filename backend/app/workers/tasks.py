@@ -64,6 +64,33 @@ async def _cleanup_expired_auth_records() -> dict[str, int]:
         await engine.dispose()
 
 
+@celery_app.task(name="app.workers.tasks.cleanup_expired_ai_conversations", ignore_result=True)
+def cleanup_expired_ai_conversations():
+    return asyncio.run(_cleanup_expired_ai_conversations())
+
+
+async def _cleanup_expired_ai_conversations() -> int:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
+    from app.repositories.ai_repository import AIRepository
+
+    engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+            now = datetime.now(UTC)
+            repository = AIRepository()
+            conversation_count = await repository.purge_expired_conversations(db, now=now)
+            action_count = await repository.purge_expired_actions(
+                db,
+                cutoff=now - timedelta(days=settings.AI_ACTION_RETENTION_DAYS),
+            )
+            await db.commit()
+            return conversation_count + action_count
+    finally:
+        await engine.dispose()
+
+
 @celery_app.task(
     name="app.workers.tasks.cleanup_deleted_organization_files",
     ignore_result=True,

@@ -67,6 +67,20 @@ class TaskRepository:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
+    async def first_active_user_id(
+        self, db: AsyncSession, *, organization_id: str
+    ) -> str | None:
+        return await db.scalar(
+            select(User.id)
+            .where(
+                User._organization_id == organization_id,
+                User.is_active.is_(True),
+                User.is_platform_admin.is_(False),
+            )
+            .order_by(User.created_at.asc(), User.id.asc())
+            .limit(1)
+        )
+
     async def count(
         self,
         db: AsyncSession,
@@ -169,6 +183,20 @@ class TaskRepository:
         task = Task(**data)
         db.add(task)
         return task
+
+    async def get_by_ai_action_id(
+        self,
+        db: AsyncSession,
+        *,
+        ai_action_id: str,
+        organization_id: str,
+    ) -> Task | None:
+        return await db.scalar(
+            select(Task).where(
+                Task.ai_action_id == ai_action_id,
+                Task.organization_id == organization_id,
+            )
+        )
 
     async def validate_ticket(
         self, db: AsyncSession, ticket_id: str | None, organization_id: str

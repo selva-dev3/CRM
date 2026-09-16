@@ -83,6 +83,7 @@ async def get_current_user(
         user.__dict__["_api_key_scopes"] = {
             str(scope).strip().lower() for scope in parsed_scopes if str(scope).strip()
         }
+        user.__dict__["_request_api_key_id"] = api_key.id
         return user
 
     token = raw_token
@@ -138,6 +139,7 @@ async def get_current_user(
         )
     access_session.last_used_at = now
     await apply_organization_context(db, user, request.headers.get("X-Organization-ID"))
+    user.__dict__["_request_session_id"] = access_session.id
     return user
 
 

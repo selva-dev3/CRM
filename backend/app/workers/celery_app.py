@@ -37,6 +37,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.cleanup_expired_auth_records",
         "schedule": crontab(minute=10),
     },
+    "cleanup-expired-ai-conversations": {
+        "task": "app.workers.tasks.cleanup_expired_ai_conversations",
+        "schedule": crontab(minute=25),
+    },
     "cleanup-deleted-organization-files": {
         "task": "app.workers.tasks.cleanup_deleted_organization_files",
         "options": {"queue": "organization_cleanup"},

@@ -23,6 +23,7 @@ class AIConversation(Base):
     title: Mapped[str | None] = mapped_column(String(255))
     model_name: Mapped[str] = mapped_column(String(100), default="gpt-4o")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class AIPrompt(Base):
@@ -124,11 +125,16 @@ class AIRun(Base):
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(50), default="v1", nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(100), index=True)
     status: Mapped[str] = mapped_column(String(30), default="started", index=True, nullable=False)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    reserved_cost_usd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    pricing_status: Mapped[str] = mapped_column(String(30), default="unknown", nullable=False)
+    pricing_version: Mapped[str | None] = mapped_column(String(50))
+    pricing_currency: Mapped[str | None] = mapped_column(String(3))
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)
@@ -163,6 +169,36 @@ class AIAction(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    executing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class AIToolAudit(Base):
+    """Privacy-minimized audit metadata for one registered AI tool execution."""
+
+    __tablename__ = "ai_tool_audits"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    request_id: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    run_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("ai_runs.id", ondelete="SET NULL"), index=True
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String, ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    tool_name: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(50))
+    model_name: Mapped[str | None] = mapped_column(String(100))
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    result_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    succeeded: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    error_category: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True, nullable=False
+    )
 
 
 class AITranscript(Base):

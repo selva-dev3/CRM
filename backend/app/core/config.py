@@ -148,27 +148,20 @@ class Settings(BaseSettings):
     STRIPE_MODE: Literal["test", "live"] | None = None
 
     # AI API Keys
-    OPENAI_API_KEY: str | None = None
-    ANTHROPIC_API_KEY: str | None = None
-    GEMINI_API_KEY: str | None = None
     SUSANOOX_AI_KEY: str | None = None
-    AI_PROVIDER: Literal["openai", "anthropic", "gemini", "susanoox"] = "susanoox"
+    AI_PROVIDER: Literal["susanoox"] = "susanoox"
     AI_MODEL: str = "susanoox-fast"
     SUSANOOX_MODEL_POOL: str = "susanoox-fast,susanoox-large"
-    AI_WEB_SEARCH_MODEL: str = "gpt-4.1-mini"
-    AI_GEMINI_WEB_SEARCH_MODEL: str | None = None
-    AI_OPENAI_FALLBACK_MODEL: str | None = None
-    AI_ANTHROPIC_FALLBACK_MODEL: str | None = None
-    AI_GEMINI_FALLBACK_MODEL: str | None = None
-    AI_TRANSCRIPTION_MODEL: str = "whisper-1"
-    AI_GEMINI_TRANSCRIPTION_MODEL: str | None = None
     AI_MAX_AUDIO_BYTES: int = 25 * 1024 * 1024
+    AI_MAX_PROMPT_BYTES: int = 262144
+    AI_MAX_OUTPUT_TOKENS: int = 2048
     AI_REQUEST_TIMEOUT_SECONDS: float = 30.0
     AI_MAX_RETRIES: int = 0
     AI_RATE_LIMIT: str = "20/minute"
     AI_MONTHLY_COST_LIMIT_USD: float = 100.0
-    AI_INPUT_COST_PER_MILLION_USD: float = 0.15
-    AI_OUTPUT_COST_PER_MILLION_USD: float = 0.60
+    AI_MODEL_PRICING_JSON: str = "{}"
+    AI_CONVERSATION_RETENTION_DAYS: int = 30
+    AI_ACTION_RETENTION_DAYS: int = 30
     ENVIRONMENT: str = "development"
     # CORS & Frontend URLs
     CORS_ORIGINS: str = (

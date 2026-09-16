@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { LoaderCircle, Sparkles, X } from 'lucide-react';
 import { useHasPermission } from '@/hooks/use-has-permission';
 import type { AIActionProposal, AIEvidence, AIResultBlock } from '@/lib/api/ai';
@@ -10,6 +10,13 @@ import { getErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ActionPreview } from '@/components/features/ai/action-preview';
+import {
+  AUTH_SESSION_CHANGED_EVENT,
+  captureAuthSessionGeneration,
+  isAuthSessionGenerationCurrent,
+} from '@/lib/api/client';
+import { ORGANIZATION_CONTEXT_CHANGED_EVENT } from '@/lib/organization-context';
 import {
   Sheet,
   SheetClose,
@@ -59,18 +66,44 @@ export function AIChatAssistant() {
   const [error, setError] = useState<string>();
   const [executingActionId, setExecutingActionId] = useState<string>();
   const [executedActionIds, setExecutedActionIds] = useState<Set<string>>(new Set());
+  const activeRequestRef = useRef<AbortController | undefined>(undefined);
+
+  useEffect(() => {
+    const reset = () => {
+      activeRequestRef.current?.abort();
+      activeRequestRef.current = undefined;
+      setMessages([]);
+      setConversationId(undefined);
+      setInput('');
+      setError(undefined);
+      setIsSending(false);
+      setExecutingActionId(undefined);
+      setExecutedActionIds(new Set());
+    };
+    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
+    window.addEventListener(ORGANIZATION_CONTEXT_CHANGED_EVENT, reset);
+    return () => {
+      window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, reset);
+      window.removeEventListener(ORGANIZATION_CONTEXT_CHANGED_EVENT, reset);
+      activeRequestRef.current?.abort();
+    };
+  }, []);
 
   const handleConfirmAction = async (proposalId: string) => {
     if (executingActionId) return;
+    const generation = captureAuthSessionGeneration();
     setExecutingActionId(proposalId);
     setError(undefined);
     try {
       await aiService.confirmAction(proposalId);
+      if (!isAuthSessionGenerationCurrent(generation)) return;
       setExecutedActionIds((previous) => new Set(previous).add(proposalId));
     } catch (requestError: unknown) {
-      setError(getErrorMessage(requestError, 'The AI action could not be completed.'));
+      if (isAuthSessionGenerationCurrent(generation)) {
+        setError(getErrorMessage(requestError, 'The AI action could not be completed.'));
+      }
     } finally {
-      setExecutingActionId(undefined);
+      if (isAuthSessionGenerationCurrent(generation)) setExecutingActionId(undefined);
     }
   };
 
@@ -84,25 +117,45 @@ export function AIChatAssistant() {
     setInput('');
     setError(undefined);
     setIsSending(true);
+    const generation = captureAuthSessionGeneration();
+    const controller = new AbortController();
+    const assistantId = crypto.randomUUID();
+    activeRequestRef.current?.abort();
+    activeRequestRef.current = controller;
+    const ownsRequest = () => (
+      activeRequestRef.current === controller
+      && !controller.signal.aborted
+      && isAuthSessionGenerationCurrent(generation)
+    );
     try {
-      const response = await aiService.chatAssistant(message, conversationId);
+      setMessages((previous) => [...previous, { id: assistantId, sender: 'ai', text: '' }]);
+      const response = await aiService.streamChatAssistant(message, conversationId, {
+        onDelta: (text) => {
+          if (!ownsRequest()) return;
+          setMessages((previous) => previous.map((item) => (
+            item.id === assistantId ? { ...item, text: item.text + text } : item
+          )));
+        },
+      }, controller.signal);
+      if (!ownsRequest()) return;
       setConversationId(response.conversation_id);
-      setMessages((previous) => [
-        ...previous,
-        {
-          id: crypto.randomUUID(),
+      setMessages((previous) => previous.map((item) => (
+        item.id === assistantId ? {
+          ...item,
           sender: 'ai',
           text: response.response,
           actions: response.proposed_actions,
           evidence: response.evidence,
           resultBlocks: response.result_blocks ?? [],
           followUpQuestions: response.follow_up_questions ?? [],
-        },
-      ]);
+        } : item
+      )));
     } catch (requestError: unknown) {
+      if (!ownsRequest()) return;
       setError(getErrorMessage(requestError, 'The AI assistant is currently unavailable.'));
     } finally {
-      setIsSending(false);
+      if (activeRequestRef.current === controller) activeRequestRef.current = undefined;
+      if (isAuthSessionGenerationCurrent(generation)) setIsSending(false);
     }
   };
 
@@ -220,9 +273,8 @@ export function AIChatAssistant() {
                   const proposalId = action.proposal_id;
                   const executed = executedActionIds.has(proposalId);
                   return (
-                    <div key={proposalId} className="mt-2 rounded border border-gray-700 p-2">
-                      <p className="font-medium text-white">{action.title}</p>
-                      {hasPermission(PERMISSIONS.TASKS.CREATE) ? (
+                    <ActionPreview key={proposalId} action={action} dark controls={
+                      hasPermission(PERMISSIONS.TASKS.CREATE) ? (
                         <button
                           type="button"
                           onClick={() => handleConfirmAction(proposalId)}
@@ -237,8 +289,8 @@ export function AIChatAssistant() {
                         </button>
                       ) : (
                         <p className="mt-1 text-xs text-gray-400">Missing task creation permission.</p>
-                      )}
-                    </div>
+                      )
+                    } />
                   );
                 })}
               </div>

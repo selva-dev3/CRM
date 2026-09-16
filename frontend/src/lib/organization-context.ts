@@ -2,6 +2,7 @@
 const CONTEXT_KEY = 'crm:organization-context';
 export const ORGANIZATION_DELETED_EVENT = 'crm:organization-deleted';
 export const ORGANIZATION_DELETED_BROADCAST = 'crm:organization-deleted-broadcast';
+export const ORGANIZATION_CONTEXT_CHANGED_EVENT = 'crm:organization-context-changed';
 
 export function broadcastOrganizationDeleted(organizationId: string): void {
   if (typeof window === 'undefined') return;
@@ -16,8 +17,12 @@ export function getOrganizationContext(): string | null {
 
 export function setOrganizationContext(organizationId: string | null): void {
   if (typeof window === 'undefined') return;
+  const previous = getOrganizationContext();
   if (organizationId) sessionStorage.setItem(CONTEXT_KEY, organizationId);
   else sessionStorage.removeItem(CONTEXT_KEY);
+  if (previous !== organizationId) {
+    window.dispatchEvent(new Event(ORGANIZATION_CONTEXT_CHANGED_EVENT));
+  }
 }
 
 const LAST_DELETION_KEY = 'crm:last-organization-deletion';

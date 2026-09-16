@@ -1,4 +1,6 @@
 import asyncio
+import re
+import uuid
 from contextlib import asynccontextmanager, suppress
 
 import redis.asyncio as redis
@@ -14,6 +16,7 @@ from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.rate_limiter import limiter, rate_limit_exceeded_handler
+from app.core.request_context import reset_request_id, set_request_id
 from app.db.session import AsyncSessionLocal, engine
 from app.models import Base
 
@@ -89,6 +92,23 @@ register_exception_handlers(app)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
+_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
+
+
+@app.middleware("http")
+async def attach_request_id(request: Request, call_next):
+    """Attach a safe request correlation identifier to context and responses."""
+    supplied = request.headers.get("X-Request-ID", "").strip()
+    request_id = supplied if _REQUEST_ID_PATTERN.fullmatch(supplied) else str(uuid.uuid4())
+    request.state.request_id = request_id
+    token = set_request_id(request_id)
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        reset_request_id(token)
+
 
 def _is_trusted_origin(request: Request, origin: str | None) -> bool:
     """Allow same-origin requests and explicitly configured cross-origin clients."""
@@ -128,7 +148,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Total-Count"],
+    expose_headers=["X-Total-Count", "X-Request-ID"],
 )
 
 # API Routes
