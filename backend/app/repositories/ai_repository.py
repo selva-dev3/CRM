@@ -1135,6 +1135,7 @@ class AIRepository:
         related_access: dict[str, RecordAccessContext | None] | None = None,
         entity_type: str,
         intent: str = "list",
+        record_id: str | None = None,
         text_query: str | None = None,
         status: str | None = None,
         filters: list[dict[str, object]] | None = None,
@@ -1677,6 +1678,10 @@ class AIRepository:
                 else model.organization_id == organization_id
             )
         ]
+        if intent == "detail":
+            if not record_id:
+                raise ValueError("A detail search requires a record ID")
+            conditions.append(model.id == record_id)
         target_access = (
             {
                 {

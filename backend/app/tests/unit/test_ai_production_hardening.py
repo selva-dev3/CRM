@@ -47,6 +47,30 @@ def test_data_classification_exports_only_explicitly_allowed_sensitive_fields():
     assert minimized == {"email": "customer@example.com"}
 
 
+def test_data_classification_drops_dynamic_custom_fields_and_email_aliases():
+    record = {
+        "id": "deal-1",
+        "organization_id": "org-1",
+        "custom_fields": {"unclassified_private_value": "do-not-export"},
+        "from_email": "sender@example.com",
+        "to_email": "recipient@example.com",
+        "stage": "Prospecting",
+    }
+
+    assert AIDataClassificationService.minimize(record) == {
+        "id": "deal-1",
+        "stage": "Prospecting",
+    }
+    assert AIDataClassificationService.minimize(
+        record, allowed_sensitive_fields={"email"}
+    ) == {
+        "id": "deal-1",
+        "from_email": "sender@example.com",
+        "to_email": "recipient@example.com",
+        "stage": "Prospecting",
+    }
+
+
 def test_provider_model_pricing_registry_supports_known_and_unknown(monkeypatch):
     monkeypatch.setattr(
         "app.services.ai_pricing_service.settings.AI_MODEL_PRICING_JSON",
@@ -210,6 +234,38 @@ async def test_registered_simple_product_list_reuses_product_service():
     assert result == [{"id": "product-1", "name": "CRM"}]
     products.list_products.assert_awaited_once()
     fallback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_open_deal_list_uses_normalized_repository_search():
+    registry = AIToolRegistry(audit_service=AsyncMock())
+    deals = AsyncMock()
+    registry.__dict__["deals"] = deals
+    context = AIToolContext(
+        db=AsyncMock(),
+        user=User(id="user-1", email="user@example.com", organization_id="org-1"),
+        organization_id="org-1",
+        permissions=frozenset({"deals:read"}),
+        run=AIRun(
+            id="run-1",
+            organization_id="org-1",
+            user_id="user-1",
+            feature="sales_assistant_chat",
+            provider="susanoox",
+            model_name="susanoox-fast",
+        ),
+    )
+    fallback = AsyncMock(return_value=[{"id": "deal-1", "stage": "Prospecting"}])
+
+    result = await registry.execute_plan(
+        context,
+        CRMSearchPlan(entity_type="deal", status="open"),
+        fallback=fallback,
+    )
+
+    assert result == [{"id": "deal-1", "stage": "Prospecting"}]
+    fallback.assert_awaited_once()
+    deals.list_deals.assert_not_awaited()
 
 
 @pytest.mark.asyncio

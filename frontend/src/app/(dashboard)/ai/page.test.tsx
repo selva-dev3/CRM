@@ -89,6 +89,38 @@ describe('AIIntelligencePage', () => {
     expect(screen.getByText(/Fallback model used/)).toBeInTheDocument();
   });
 
+  it('renders every bounded deal row without exposing internal identifiers', async () => {
+    const records = Array.from({ length: 50 }, (_, index) => ({
+      id: `deal-${index}`,
+      title: `Deal ${index}`,
+      stage: 'Prospecting',
+      organization_id: 'org-internal',
+      custom_fields: { private_value: 'not-for-table' },
+    }));
+    mocks.streamChatAssistant.mockResolvedValue({
+      conversation_id: 'conversation-1',
+      response: 'Found 50 matching deal record(s).',
+      result_blocks: [{
+        key: 'deals', title: 'Deals', entity_type: 'deal', intent: 'list',
+        results: records, result_count: 50,
+        explanation: 'Found 50 matching deal record(s).',
+        generated_at: '2026-09-16T00:00:00Z',
+      }],
+      evidence: [], proposed_actions: [], follow_up_questions: [],
+    });
+    render(<AIIntelligencePage />);
+    fireEvent.change(screen.getByLabelText('Message CRM AI'), {
+      target: { value: 'List all deals in a table' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+
+    expect(await screen.findByText('Deal 49')).toBeInTheDocument();
+    expect(screen.getByText(/Showing the first 50 matching records/)).toBeInTheDocument();
+    expect(screen.queryByText('deal-49')).not.toBeInTheDocument();
+    expect(screen.queryByText('org-internal')).not.toBeInTheDocument();
+    expect(screen.queryByText('not-for-table')).not.toBeInTheDocument();
+  });
+
   it('loads a tenant-scoped persisted conversation', async () => {
     mocks.listConversations.mockResolvedValue({ items: [{
       id: 'conversation-1',

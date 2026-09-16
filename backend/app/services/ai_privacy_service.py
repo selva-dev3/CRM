@@ -41,6 +41,9 @@ class AIDataClassificationService:
             "signing_key",
             "otp_secret",
             "recovery_code",
+            "custom_fields",
+            "organization_id",
+            "tenant_id",
         }
     )
     SENSITIVE_FIELDS = frozenset(
@@ -113,7 +116,9 @@ class AIDataClassificationService:
             marker in normalized for marker in ("password", "token", "secret", "credential")
         ):
             return AIDataClass.NEVER_EXPORT
-        if normalized in cls.SENSITIVE_FIELDS:
+        if normalized in cls.SENSITIVE_FIELDS or normalized.endswith(
+            ("_email", "_phone", "_address")
+        ):
             return AIDataClass.SENSITIVE_PURPOSE_RESTRICTED
         return AIDataClass.SAFE_OPERATIONAL
 
@@ -132,9 +137,17 @@ class AIDataClassificationService:
                 classification = cls.classify(key)
                 if classification is AIDataClass.NEVER_EXPORT:
                     continue
+                sensitive_allowed = key.lower() in allowed or any(
+                    key.lower().endswith(suffix) and field in allowed
+                    for suffix, field in (
+                        ("_email", "email"),
+                        ("_phone", "phone"),
+                        ("_address", "address"),
+                    )
+                )
                 if (
                     classification is AIDataClass.SENSITIVE_PURPOSE_RESTRICTED
-                    and key.lower() not in allowed
+                    and not sensitive_allowed
                 ):
                     continue
                 minimized[key] = cls.minimize(item, allowed_sensitive_fields=allowed)

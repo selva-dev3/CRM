@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.core.logging import get_logger
+from app.core.permissions import effective_organization_id
 from app.models.user import User
 from app.repositories.report_repository import (
     CLOSED_LOST_STAGE,
@@ -160,11 +161,7 @@ class ReportService:
         scheduled-report Celery task) which carry no request user; it still
         requires an explicit *org_id* and never widens API-facing access.
         """
-        user_org = (
-            current_user.organization_id
-            if current_user and getattr(current_user, "organization_id", None)
-            else None
-        )
+        user_org = effective_organization_id(current_user) if current_user else None
 
         if not user_org:
             if internal and org_id and org_id.strip():
