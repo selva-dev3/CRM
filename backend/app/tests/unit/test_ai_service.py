@@ -540,6 +540,184 @@ async def test_sales_assistant_planner_receives_only_permitted_crm_catalog():
 
 
 @pytest.mark.asyncio
+async def test_sales_assistant_repairs_unsupported_deal_field_before_querying():
+    repository = _repository()
+    as_mock(repository.execute_search_plan).return_value = [{"count": 4}]
+    rejected_plan = CRMChatPlan(
+        operations=[
+            CRMSearchPlan(
+                intent="count",
+                entity_type="deal",
+                filters=[{"field": "status", "operator": "equals", "value": "open"}],
+            )
+        ]
+    )
+    repaired_plan = CRMChatPlan(
+        operations=[CRMSearchPlan(intent="count", entity_type="deal", status="open")]
+    )
+    runtime = AsyncMock()
+    runtime.execute.side_effect = [
+        (
+            rejected_plan,
+            SimpleNamespace(id="rejected-run", model_name="susanoox-fast", total_tokens=10),
+        ),
+        (
+            repaired_plan,
+            SimpleNamespace(id="repaired-run", model_name="susanoox-fast", total_tokens=10),
+        ),
+    ]
+    service = AIDomainService(
+        repository=repository,
+        runtime=runtime,
+        tool_registry=_fallback_tool_registry(),
+    )
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
+
+    result = await service.sales_assistant_chat(
+        AsyncMock(spec=AsyncSession), "How many open deals are there?", None, _user()
+    )
+
+    assert result["response"] == "There are 4 matching deal record(s)."
+    assert result["metadata"]["run_id"] == "repaired-run"
+    assert as_async_mock(runtime.execute).await_count == 2
+    assert (
+        "authorized_crm_catalog"
+        in as_async_mock(runtime.execute).await_args_list[1].kwargs["provider_context"]
+    )
+    query = require_await(repository.execute_search_plan).kwargs
+    assert query["organization_id"] == "org-1"
+    assert query["status"] == "open"
+    assert query["filters"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("intent", "question", "results"),
+    [
+        (
+            "list",
+            "List open deals",
+            [{"id": "deal-1", "title": "Expansion", "stage": "Prospecting"}],
+        ),
+        (
+            "aggregate",
+            "What is the total value of open deals?",
+            [{"aggregate": "sum", "field": "amount", "value": 500000, "matched_count": 3}],
+        ),
+    ],
+)
+async def test_sales_assistant_repair_preserves_open_deal_intent(intent, question, results):
+    repository = _repository()
+    as_mock(repository.execute_search_plan).return_value = results
+    options = {"aggregate": "sum", "aggregate_field": "amount"} if intent == "aggregate" else {}
+    rejected_plan = CRMChatPlan(
+        operations=[
+            CRMSearchPlan(
+                intent=intent,
+                entity_type="deal",
+                filters=[{"field": "status", "operator": "equals", "value": "open"}],
+                **options,
+            )
+        ]
+    )
+    repaired_plan = CRMChatPlan(
+        operations=[CRMSearchPlan(intent=intent, entity_type="deal", status="open", **options)]
+    )
+    runtime = AsyncMock()
+    provider_responses = [
+        (
+            rejected_plan,
+            SimpleNamespace(id="first-run", model_name="susanoox-fast", total_tokens=10),
+        ),
+        (
+            repaired_plan,
+            SimpleNamespace(id="second-run", model_name="susanoox-fast", total_tokens=10),
+        ),
+    ]
+    if intent == "list":
+        provider_responses.append(
+            (
+                AIChatGeneratedOutput(response="Expansion is an open deal."),
+                SimpleNamespace(id="answer-run", model_name="susanoox-fast", total_tokens=10),
+            )
+        )
+    runtime.execute.side_effect = provider_responses
+    service = AIDomainService(
+        repository=repository,
+        runtime=runtime,
+        tool_registry=_fallback_tool_registry(),
+    )
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
+
+    result = await service.sales_assistant_chat(
+        AsyncMock(spec=AsyncSession), question, None, _user()
+    )
+
+    assert result["result_blocks"][0]["intent"] == intent
+    assert require_await(repository.execute_search_plan).kwargs["intent"] == intent
+    assert require_await(repository.execute_search_plan).kwargs["status"] == "open"
+    assert as_async_mock(runtime.execute).await_count == (3 if intent == "list" else 2)
+    planner_instructions = (
+        as_async_mock(runtime.execute).await_args_list[0].kwargs["task_instructions"]
+    )
+    assert "preserving the user's requested" in planner_instructions
+    assert "choose count only when the user asks how many" in planner_instructions
+
+
+@pytest.mark.asyncio
+async def test_sales_assistant_rejects_second_unsupported_plan_without_querying():
+    repository = _repository()
+    invalid_plan = CRMChatPlan(
+        operations=[
+            CRMSearchPlan(
+                intent="count",
+                entity_type="deal",
+                filters=[{"field": "is_open", "operator": "equals", "value": True}],
+            )
+        ]
+    )
+    runtime = AsyncMock()
+    runtime.execute.side_effect = [
+        (invalid_plan, SimpleNamespace(id="first-run", model_name="susanoox-fast")),
+        (invalid_plan, SimpleNamespace(id="second-run", model_name="susanoox-fast")),
+    ]
+    service = AIDomainService(repository=repository, runtime=runtime)
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
+
+    with pytest.raises(APIException, match="unsupported CRM fields"):
+        await service.sales_assistant_chat(
+            AsyncMock(spec=AsyncSession), "How many open deals are there?", None, _user()
+        )
+
+    assert as_async_mock(runtime.execute).await_count == 2
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sales_assistant_does_not_retry_unauthorized_entity_plan():
+    repository = _repository()
+    invalid_plan = CRMChatPlan(
+        operations=[
+            CRMSearchPlan(
+                entity_type="deal",
+                filters=[{"field": "is_open", "operator": "equals", "value": True}],
+            )
+        ]
+    )
+    runtime = _runtime(invalid_plan)
+    service = AIDomainService(repository=repository, runtime=runtime)
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate"}))
+
+    with pytest.raises(ForbiddenError, match="deals:read"):
+        await service.sales_assistant_chat(
+            AsyncMock(spec=AsyncSession), "How many open deals are there?", None, _user()
+        )
+
+    as_async_mock(runtime.execute).assert_awaited_once()
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_sales_assistant_drops_evidence_not_present_in_authorized_context():
     repository = _repository()
     as_mock(repository.execute_search_plan).return_value = [

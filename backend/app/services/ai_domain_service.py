@@ -1193,32 +1193,67 @@ class AIDomainService:
                 {"user": prompt.user_prompt, "assistant": prompt.ai_response} for prompt in prompts
             ]
 
+        planner_context = {
+            "question": message,
+            "recent_conversation": history,
+            "authorized_crm_catalog": self._search_catalog(permissions),
+            "current_utc_date": datetime.now(UTC).date().isoformat(),
+        }
+        planner_instructions = (
+            "Create a safe plan that answers the current CRM question. Use one operation for "
+            "each independently required dataset and no more than five operations. Resolve "
+            "follow-up references only from recent_conversation. Use only entities and fields "
+            "in authorized_crm_catalog. Prefer database count, aggregate, and comparison "
+            "operations over asking the model to calculate, while preserving the user's requested "
+            "list, detail, count, aggregate, or comparison intent. For open deals, use top-level "
+            "status open; choose count only when the user asks how many. Deal filters use stage, "
+            "never status. Request include_fields when related names are "
+            "needed in the answer. If the question is ambiguous or cannot be answered from the "
+            "authorized catalog, set needs_clarification and ask one specific clarification "
+            "question. Never emit SQL."
+        )
         plan_output, plan_run = await self._run(
             db,
             current_user=current_user,
             feature="sales_assistant_plan",
-            context={
-                "question": message,
-                "recent_conversation": history,
-                "authorized_crm_catalog": self._search_catalog(permissions),
-                "current_utc_date": datetime.now(UTC).date().isoformat(),
-            },
-            instructions=(
-                "Create a safe plan that answers the current CRM question. Use one operation for "
-                "each independently required dataset and no more than five operations. Resolve "
-                "follow-up references only from recent_conversation. Use only entities and fields "
-                "in authorized_crm_catalog. Prefer database count, aggregate, and comparison "
-                "operations over asking the model to calculate. Use stage, not status, for deals. "
-                "Request include_fields when related names are needed in the answer. "
-                "If the question is ambiguous or cannot be answered from the authorized catalog, "
-                "set needs_clarification and ask one specific clarification question. Never emit SQL."
-            ),
+            context=planner_context,
+            instructions=planner_instructions,
             output_schema=CRMChatPlan,
             persist_generated_content=False,
         )
         chat_plan = CRMChatPlan.model_validate(plan_output)
+        try:
+            for operation in chat_plan.operations:
+                self._validate_search_plan(operation)
+        except APIException as exc:
+            if (
+                exc.code != "AI_INVALID_SEARCH_PLAN"
+                or exc.message != "The AI provider requested unsupported CRM fields."
+            ):
+                raise
+            # A rejected plan never reaches a CRM tool. Give the provider one
+            # bounded chance to use the authorized catalog, without echoing
+            # untrusted plan content back into its instructions.
+            for operation in chat_plan.operations:
+                self._require_search_permissions(permissions, operation)
+            plan_output, plan_run = await self._run(
+                db,
+                current_user=current_user,
+                feature="sales_assistant_plan",
+                context=planner_context,
+                instructions=(
+                    planner_instructions
+                    + " Your previous plan used unsupported CRM field names. Create a new plan "
+                    "using only fields listed for each entity in authorized_crm_catalog. "
+                    "Do not repeat unsupported fields."
+                ),
+                output_schema=CRMChatPlan,
+                persist_generated_content=False,
+            )
+            chat_plan = CRMChatPlan.model_validate(plan_output)
+            for operation in chat_plan.operations:
+                self._validate_search_plan(operation)
         for operation in chat_plan.operations:
-            self._validate_search_plan(operation)
             self._require_search_permissions(permissions, operation)
             registered_name = self.tool_registry.tool_name_for_plan(operation)
             if operation.tool_name is not None and operation.tool_name != registered_name:
@@ -1231,6 +1266,7 @@ class AIDomainService:
 
         result_blocks: list[AIResultBlock] = []
         for index, operation in enumerate(chat_plan.operations, start=1):
+
             async def execute_registered_fallback(
                 selected: CRMSearchPlan,
             ) -> list[dict[str, object]]:
