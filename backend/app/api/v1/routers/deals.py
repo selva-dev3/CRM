@@ -544,7 +544,7 @@ async def get_deal_quotes(
 
 @router.post(
     "/{deal_id}/predict-win-rate",
-    summary="AI prediction for deal win probability using OpenAI",
+    summary="AI prediction for deal win probability using Susanoox",
     dependencies=[
         Depends(require_permission("ai:generate")),
         Depends(require_permission("deals:read")),

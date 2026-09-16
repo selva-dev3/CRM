@@ -24,7 +24,7 @@ CRM/
     │   ├── core/             # JWT Auth, Bcrypt, RBAC Permissions
     │   ├── models/           # SQLAlchemy 2.0 ORM Models
     │   ├── schemas/          # Pydantic v2 Request/Response Schemas
-    │   ├── services/         # Gemini / OpenAI / Anthropic AI provider layer
+    │   ├── services/         # Governed Susanoox AI provider and CRM services
     │   └── worker/           # Celery Async Background Tasks
     └── requirements.txt
 ```
@@ -80,5 +80,5 @@ orphaned objects after a 24-hour grace period.
 AI model identifiers are deployment configuration, not application constants. For CRM natural-language
 search, set `SUSANOOX_AI_KEY`, `AI_PROVIDER=susanoox`, and `AI_MODEL=susanoox-fast`. The default
 `SUSANOOX_MODEL_POOL=susanoox-fast,susanoox-large` retains ordered retry fallback. Keep
-provider keys in runtime environment variables and never commit real credentials. Existing Gemini
-configuration remains available only for workflows that still explicitly use Gemini.
+the Susanoox key in server-side runtime environment variables and never commit real credentials.
+Other LLM providers are intentionally unsupported by the CRM AI runtime.

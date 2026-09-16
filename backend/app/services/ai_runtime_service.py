@@ -1,4 +1,6 @@
+import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from time import monotonic
 
@@ -9,9 +11,12 @@ from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError
 from app.core.logging import get_logger
 from app.core.permissions import effective_organization_id
+from app.core.request_context import get_request_id
 from app.models import AIOrganizationConfig, AIRun, User
 from app.repositories.ai_repository import AIRepository
 from app.schemas.ai import TranscriptionResponse
+from app.services.ai_pricing_service import PricingStatus, ai_model_pricing_registry
+from app.services.ai_privacy_service import ai_data_classification_service
 from app.services.ai_provider_service import (
     AIProviderGateway,
     AIProviderResult,
@@ -48,10 +53,9 @@ class AIRuntimeService:
 
     @staticmethod
     def configured_provider_model(config: AIOrganizationConfig | None) -> tuple[str, str]:
-        return (
-            config.provider if config and config.provider else settings.AI_PROVIDER,
-            config.model_name if config and config.model_name else settings.AI_MODEL,
-        )
+        allowed_models = {settings.AI_MODEL, *settings.susanoox_model_pool}
+        configured_model = config.model_name if config and config.model_name else settings.AI_MODEL
+        return "susanoox", configured_model if configured_model in allowed_models else settings.AI_MODEL
 
     async def configuration_readiness(self, db: AsyncSession, organization_id: str) -> str:
         """Configuration snapshot only; live credentials and quotas are checked at execution."""
@@ -59,14 +63,10 @@ class AIRuntimeService:
             config = await self.enabled_configuration(db, organization_id)
         except ForbiddenError:
             return "DISABLED"
-        provider, model = self.configured_provider_model(config)
-        credential = {
-            "openai": settings.OPENAI_API_KEY,
-            "anthropic": settings.ANTHROPIC_API_KEY,
-            "gemini": settings.GEMINI_API_KEY,
-            "susanoox": settings.SUSANOOX_AI_KEY,
-        }.get(provider)
-        if not model.strip() or not self.provider_gateway.has_usable_api_key(credential):
+        _, model = self.configured_provider_model(config)
+        if not model.strip() or not self.provider_gateway.has_usable_api_key(
+            settings.SUSANOOX_AI_KEY
+        ):
             return "PROVIDER_UNAVAILABLE"
         return "READY"
 
@@ -105,28 +105,14 @@ class AIRuntimeService:
         entity_type: str | None,
         entity_id: str | None,
         prompt_version: str,
-        provider_override: str | None = None,
-        model_override: str | None = None,
-        model_overrides: dict[str, str] | None = None,
+        prompt_bytes: int = 0,
+        local: bool = False,
     ) -> AIRun:
         organization_id = effective_organization_id(current_user)
         if not organization_id:
             raise ForbiddenError(message="An organization is required to use AI features.")
 
         organization_config = await self.enabled_configuration(db, organization_id)
-
-        monthly_cost = await self.repository.monthly_cost(db, organization_id)
-        cost_limit = (
-            organization_config.monthly_cost_limit_usd
-            if organization_config and organization_config.monthly_cost_limit_usd is not None
-            else settings.AI_MONTHLY_COST_LIMIT_USD
-        )
-        if cost_limit >= 0 and monthly_cost >= cost_limit:
-            raise APIException(
-                status_code=429,
-                code="AI_COST_LIMIT_REACHED",
-                message="The organization AI monthly cost limit has been reached.",
-            )
 
         subscription = await self.repository.get_subscription_for_update(db, organization_id)
         if not subscription:
@@ -141,6 +127,47 @@ class AIRuntimeService:
                 code="AI_SUBSCRIPTION_INACTIVE",
                 message="The organization subscription is not active.",
             )
+
+        # Cost and rate decisions happen only after the tenant subscription row
+        # is locked. Started runs retain a reservation until success/failure.
+        monthly_cost = await self.repository.monthly_cost(db, organization_id)
+        cost_limit = (
+            organization_config.monthly_cost_limit_usd
+            if organization_config and organization_config.monthly_cost_limit_usd is not None
+            else settings.AI_MONTHLY_COST_LIMIT_USD
+        )
+        provider, model = self.configured_provider_model(organization_config)
+        reservation = 0.0
+        pricing_status = "known" if local else "unknown"
+        if not local:
+            priced_models = list(dict.fromkeys([model, *settings.susanoox_model_pool]))
+            reservations = [
+                ai_model_pricing_registry.calculate(
+                    provider="susanoox",
+                    model=candidate,
+                    input_tokens=max(1, prompt_bytes),
+                    output_tokens=settings.AI_MAX_OUTPUT_TOKENS,
+                )
+                for candidate in priced_models
+            ]
+            if any(item.status is PricingStatus.UNKNOWN for item in reservations):
+                raise APIException(
+                    status_code=503,
+                    code="AI_PRICING_UNAVAILABLE",
+                    message=(
+                        "Susanoox model pricing must be configured before cost-limited AI "
+                        "requests can run."
+                    ),
+                )
+            reservation = max(item.estimated_cost for item in reservations)
+            pricing_status = "known"
+        if cost_limit >= 0 and monthly_cost + reservation > cost_limit:
+            raise APIException(
+                status_code=429,
+                code="AI_COST_LIMIT_REACHED",
+                message="The organization AI monthly cost limit has been reached.",
+            )
+
         rate_limit, window = self._rate_limit()
         recent_runs = await self.repository.recent_run_count(
             db, organization_id, datetime.now(UTC) - window
@@ -161,11 +188,6 @@ class AIRuntimeService:
         if ai_credits is not None and ai_credits > 0:
             subscription.ai_credits = ai_credits - 1
 
-        configured_provider, configured_model = self.configured_provider_model(organization_config)
-        provider = provider_override or configured_provider
-        if provider_override:
-            configured_model = settings.AI_MODEL
-        model = model_override or (model_overrides or {}).get(provider) or configured_model
         run = await self.repository.create_run(
             db,
             organization_id=organization_id,
@@ -177,19 +199,31 @@ class AIRuntimeService:
             model_name=model,
             prompt_version=prompt_version,
             status="started",
+            request_id=get_request_id(),
+            reserved_cost_usd=reservation,
+            pricing_status=pricing_status,
         )
         await db.commit()
         return run
 
     @staticmethod
     def _complete_success(run: AIRun, result: AIProviderResult) -> None:
+        reservation = run.reserved_cost_usd
         run.status = "succeeded"
         run.provider = result.provider
         run.model_name = result.model
         run.input_tokens = result.input_tokens
         run.output_tokens = result.output_tokens
         run.total_tokens = result.total_tokens
-        run.estimated_cost_usd = result.estimated_cost_usd
+        run.estimated_cost_usd = result.estimated_cost_usd if result.usage_available else 0.0
+        run.pricing_status = result.pricing.status.value if result.usage_available else "unknown"
+        # Unknown provider/model prices remain explicit. Retaining the bounded
+        # reservation prevents unknown-cost requests from bypassing admission.
+        run.reserved_cost_usd = (
+            0.0 if result.usage_available and result.pricing.status.value == "known" else reservation
+        )
+        run.pricing_version = result.pricing.version if result.usage_available else None
+        run.pricing_currency = result.pricing.currency if result.usage_available else None
         run.latency_ms = result.latency_ms
         run.fallback_used = result.fallback_used
         run.attempted_models_json = json.dumps(result.attempted_models)
@@ -200,6 +234,7 @@ class AIRuntimeService:
         run.status = "failed"
         run.error_code = exc.code
         run.error_message = exc.message[:1000]
+        run.reserved_cost_usd = 0.0
         run.completed_at = datetime.now(UTC)
 
     async def execute(
@@ -209,15 +244,33 @@ class AIRuntimeService:
         current_user: User,
         feature: str,
         system_prompt: str,
-        user_prompt: str,
+        provider_context: dict[str, object],
+        task_instructions: str,
         output_schema: type[BaseModel],
         entity_type: str | None = None,
         entity_id: str | None = None,
         prompt_version: str = "v1",
         web_search: bool = False,
-        provider_override: str | None = None,
+        allowed_sensitive_fields: set[str] | frozenset[str] = frozenset(),
+        on_text_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> tuple[BaseModel, AIRun]:
         started = monotonic()
+        minimized_context = ai_data_classification_service.minimize_for_provider(
+            provider_context,
+            purpose=feature,
+            requested_sensitive_fields=allowed_sensitive_fields,
+        )
+        user_prompt = (
+            f"Task instructions:\n{task_instructions}\n\n"
+            f"Authorized CRM context:\n{json.dumps(minimized_context, default=str, ensure_ascii=False)}"
+        )
+        prompt_bytes = len(system_prompt.encode("utf-8")) + len(user_prompt.encode("utf-8"))
+        if prompt_bytes > settings.AI_MAX_PROMPT_BYTES:
+            raise APIException(
+                status_code=413,
+                code="AI_PROMPT_TOO_LARGE",
+                message="The minimized AI request exceeds the configured provider payload limit.",
+            )
         run = await self._prepare_run(
             db,
             current_user=current_user,
@@ -225,19 +278,7 @@ class AIRuntimeService:
             entity_type=entity_type,
             entity_id=entity_id,
             prompt_version=prompt_version,
-            provider_override=provider_override,
-            model_overrides=(
-                {
-                    "openai": settings.AI_WEB_SEARCH_MODEL,
-                    **(
-                        {"gemini": settings.AI_GEMINI_WEB_SEARCH_MODEL}
-                        if settings.AI_GEMINI_WEB_SEARCH_MODEL
-                        else {}
-                    ),
-                }
-                if web_search
-                else None
-            ),
+            prompt_bytes=prompt_bytes,
         )
         try:
             result = await self.provider_gateway.generate_structured(
@@ -247,9 +288,18 @@ class AIRuntimeService:
                 provider=run.provider,
                 model=run.model_name,
                 web_search=web_search,
+                on_text_delta=on_text_delta,
             )
         except APIException as exc:
             self._complete_failure(run, exc)
+            await db.commit()
+            raise
+        except asyncio.CancelledError:
+            run.status = "cancelled"
+            run.error_code = "AI_REQUEST_CANCELLED"
+            run.error_message = "The AI request was cancelled."
+            run.reserved_cost_usd = 0.0
+            run.completed_at = datetime.now(UTC)
             await db.commit()
             raise
         self._complete_success(run, result)
@@ -272,37 +322,11 @@ class AIRuntimeService:
         content: bytes,
         content_type: str,
     ) -> tuple[TranscriptionResponse, AIRun]:
-        run = await self._prepare_run(
-            db,
-            current_user=current_user,
-            feature="speech_to_text",
-            entity_type=None,
-            entity_id=None,
-            prompt_version="audio-v1",
-            model_overrides={
-                "openai": settings.AI_TRANSCRIPTION_MODEL,
-                **(
-                    {"gemini": settings.AI_GEMINI_TRANSCRIPTION_MODEL}
-                    if settings.AI_GEMINI_TRANSCRIPTION_MODEL
-                    else {}
-                ),
-            },
+        raise APIException(
+            status_code=503,
+            code="AI_TRANSCRIPTION_UNAVAILABLE",
+            message="Audio transcription is unavailable with the configured Susanoox provider.",
         )
-        try:
-            result = await self.provider_gateway.transcribe_audio(
-                file_name=file_name,
-                content=content,
-                content_type=content_type,
-                provider=run.provider,
-                model=run.model_name,
-            )
-        except APIException as exc:
-            self._complete_failure(run, exc)
-            await db.commit()
-            raise
-        self._complete_success(run, result)
-        await db.commit()
-        return TranscriptionResponse.model_validate(result.output), run
 
     async def start_local_run(
         self,
@@ -319,6 +343,7 @@ class AIRuntimeService:
             entity_type=entity_type,
             entity_id=None,
             prompt_version="local-v1",
+            local=True,
         )
         run.provider = "local"
         run.model_name = "deterministic"

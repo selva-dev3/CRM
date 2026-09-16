@@ -1,6 +1,9 @@
+import asyncio
 import json
+import re
+from contextlib import suppress
 
-from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +11,8 @@ from app.api.v1.deps import get_current_user, require_permission
 from app.core.config import settings
 from app.core.errors import APIException
 from app.core.logging import get_logger
+from app.core.permissions import effective_organization_id
+from app.core.request_context import get_request_id, reset_request_id, set_request_id
 from app.db.session import get_db
 from app.models import User
 from app.schemas.ai import (
@@ -55,9 +60,46 @@ from app.schemas.ai import (
 )
 from app.schemas.crm_schemas import MessageResponse
 from app.services.ai_domain_service import ai_domain_service
+from app.services.ai_stream_session_service import ai_stream_session_service
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+class _StructuredResponseDeltaExtractor:
+    """Expose only the `response` JSON string while structured output streams."""
+
+    _start = re.compile(r'"response"\s*:\s*"')
+
+    def __init__(self) -> None:
+        self.buffer = ""
+        self.emitted = ""
+
+    def feed(self, delta: str) -> str:
+        self.buffer += delta
+        match = self._start.search(self.buffer)
+        if not match:
+            return ""
+        raw = self.buffer[match.end() :]
+        escaped = False
+        closing: int | None = None
+        for index, character in enumerate(raw):
+            if escaped:
+                escaped = False
+                continue
+            if character == "\\":
+                escaped = True
+            elif character == '"':
+                closing = index
+                break
+        fragment = raw if closing is None else raw[:closing]
+        try:
+            decoded = json.loads(f'"{fragment}"')
+        except json.JSONDecodeError:
+            return ""
+        visible = decoded[len(self.emitted) :]
+        self.emitted = decoded
+        return visible
 
 
 @router.get(
@@ -178,8 +220,26 @@ async def sales_assistant_chat(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    organization_id = effective_organization_id(current_user)
+    if not organization_id:
+        raise APIException(
+            status_code=403,
+            code="ORGANIZATION_REQUIRED",
+            message="Select an organization before using the AI assistant.",
+        )
+
+    async def assert_ownership() -> None:
+        await ai_stream_session_service.assert_current_for_update(
+            db,
+            user_id=current_user.id,
+            organization_id=organization_id,
+            session_id=getattr(current_user, "_request_session_id", None),
+            api_key_id=getattr(current_user, "_request_api_key_id", None),
+        )
+
     return await ai_domain_service.sales_assistant_chat(
-        db, payload.message, payload.conversation_id, current_user
+        db, payload.message, payload.conversation_id, current_user,
+        ownership_guard=assert_ownership,
     )
 
 
@@ -237,30 +297,116 @@ async def delete_sales_assistant_conversation(
 )
 async def stream_sales_assistant_chat(
     payload: AIChatRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Stream validated chat output; CRM data is never emitted before authorization."""
 
+    organization_id = effective_organization_id(current_user)
+    if not organization_id:
+        raise APIException(
+            status_code=403,
+            code="ORGANIZATION_REQUIRED",
+            message="Select an organization before using the AI assistant.",
+        )
+    session_id = getattr(current_user, "_request_session_id", None)
+    api_key_id = getattr(current_user, "_request_api_key_id", None)
+    request_id = get_request_id()
+
     def event(name: str, data: object) -> str:
         return f"event: {name}\ndata: {json.dumps(data, default=str)}\n\n"
 
     async def generate():
+        request_token = set_request_id(request_id) if request_id else None
         yield event("status", {"message": "Searching authorized CRM data"})
-        try:
-            result = await ai_domain_service.sales_assistant_chat(
-                db, payload.message, payload.conversation_id, current_user
+        queue: asyncio.Queue[str] = asyncio.Queue()
+        extractor = _StructuredResponseDeltaExtractor()
+
+        async def assert_ownership() -> None:
+            await ai_stream_session_service.assert_current_for_update(
+                db,
+                user_id=current_user.id,
+                organization_id=organization_id,
+                session_id=session_id,
+                api_key_id=api_key_id,
             )
+
+        async def provider_delta(raw_delta: str) -> None:
+            visible = extractor.feed(raw_delta)
+            if visible:
+                await queue.put(visible)
+
+        operation = asyncio.create_task(
+            ai_domain_service.sales_assistant_chat(
+                db,
+                payload.message,
+                payload.conversation_id,
+                current_user,
+                on_text_delta=provider_delta,
+                ownership_guard=assert_ownership,
+            )
+        )
+        next_session_check = 0.0
+        try:
+            while not operation.done() or not queue.empty():
+                if await request.is_disconnected():
+                    operation.cancel()
+                    await operation
+                    return
+                now = asyncio.get_running_loop().time()
+                if now >= next_session_check:
+                    session_current = await ai_stream_session_service.is_current(
+                        user_id=current_user.id,
+                        organization_id=organization_id,
+                        session_id=session_id,
+                        api_key_id=api_key_id,
+                    )
+                    if not session_current:
+                        operation.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await operation
+                        yield event(
+                            "error",
+                            {
+                                "code": "AI_STREAM_SESSION_REPLACED",
+                                "message": "This AI stream no longer belongs to the active session.",
+                                "retryable": False,
+                            },
+                        )
+                        return
+                    next_session_check = now + 1.0
+                try:
+                    visible_delta = await asyncio.wait_for(queue.get(), timeout=0.1)
+                except TimeoutError:
+                    continue
+                yield event("delta", {"text": visible_delta})
+            result = await operation
+            if not await ai_stream_session_service.is_current(
+                user_id=current_user.id,
+                organization_id=organization_id,
+                session_id=session_id,
+                api_key_id=api_key_id,
+            ):
+                yield event(
+                    "error",
+                    {
+                        "code": "AI_STREAM_SESSION_REPLACED",
+                        "message": "This AI stream no longer belongs to the active session.",
+                        "retryable": False,
+                    },
+                )
+                return
             metadata = result.get("metadata") or {}
             if metadata.get("fallback_used"):
                 yield event(
                     "fallback",
                     {"message": "The first AI model was unavailable. Another model responded."},
                 )
-            response_text = str(result.get("response", ""))
-            for start in range(0, len(response_text), 80):
-                yield event("delta", {"text": response_text[start : start + 80]})
             yield event("complete", result)
+        except asyncio.CancelledError:
+            operation.cancel()
+            raise
         except APIException as exc:
             yield event(
                 "error",
@@ -280,6 +426,11 @@ async def stream_sales_assistant_chat(
                     "retryable": True,
                 },
             )
+        finally:
+            if not operation.done():
+                operation.cancel()
+            if request_token is not None:
+                reset_request_id(request_token)
 
     return StreamingResponse(
         generate(),

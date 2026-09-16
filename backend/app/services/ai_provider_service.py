@@ -1,33 +1,23 @@
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from time import monotonic
-from typing import Any, TypeVar, cast
+from typing import TypeVar
 
-import anthropic
 import httpx
 import openai
-from anthropic import AsyncAnthropic
-from google import genai
-from google.genai import errors as genai_errors
-from google.genai import types as genai_types
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
 from app.core.errors import APIException
 from app.core.logging import get_logger
-from app.schemas.ai import TranscriptionResponse, TranscriptionSegment
+from app.core.request_context import get_request_id
+from app.services.ai_pricing_service import PricingCalculation, ai_model_pricing_registry
 
 logger = get_logger(__name__)
 OutputT = TypeVar("OutputT", bound=BaseModel)
-
-_PLACEHOLDER_API_KEYS = {
-    "your-openai-api-key",
-    "your-anthropic-api-key",
-    "your-gemini-api-key",
-    "your-susanoox-api-key",
-}
-
+TextDeltaHandler = Callable[[str], Awaitable[None]]
 SUSANOOX_BASE_URL = "https://llm.herd.casa/v1"
 
 
@@ -39,6 +29,7 @@ class AIProviderResult:
     input_tokens: int
     output_tokens: int
     latency_ms: int
+    usage_available: bool = True
     attempted_models: tuple[str, ...] = ()
     fallback_used: bool = False
 
@@ -48,13 +39,20 @@ class AIProviderResult:
 
     @property
     def estimated_cost_usd(self) -> float:
-        input_cost = self.input_tokens * settings.AI_INPUT_COST_PER_MILLION_USD / 1_000_000
-        output_cost = self.output_tokens * settings.AI_OUTPUT_COST_PER_MILLION_USD / 1_000_000
-        return round(input_cost + output_cost, 8)
+        return self.pricing.estimated_cost
+
+    @property
+    def pricing(self) -> PricingCalculation:
+        return ai_model_pricing_registry.calculate(
+            provider=self.provider,
+            model=self.model,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+        )
 
 
 class AIProviderGateway:
-    """Single provider boundary for validated, structured AI generation."""
+    """Single Susanoox provider boundary for validated structured generation."""
 
     _RETRYABLE_CODES = {
         "AI_PROVIDER_TIMEOUT",
@@ -69,7 +67,12 @@ class AIProviderGateway:
     @staticmethod
     def has_usable_api_key(value: str | None) -> bool:
         normalized = value.strip().lower() if value else ""
-        return bool(normalized and normalized not in _PLACEHOLDER_API_KEYS)
+        return bool(normalized and normalized != "your-susanoox-api-key")
+
+    @staticmethod
+    def _request_headers() -> dict[str, str]:
+        request_id = get_request_id()
+        return {"X-Request-ID": request_id} if request_id else {}
 
     @staticmethod
     def _safe_log_value(value: object, *, max_length: int = 128) -> str:
@@ -92,150 +95,63 @@ class AIProviderGateway:
                 code = body.get("code") or body.get("type")
         return cls._safe_log_value(code)
 
-    @staticmethod
-    def _gemini_error_reason(exc: genai_errors.APIError) -> str:
-        details = getattr(exc, "details", None)
-        error = details.get("error") if isinstance(details, dict) else None
-        entries = error.get("details") if isinstance(error, dict) else None
-        if not isinstance(entries, list):
-            return ""
-        for entry in entries:
-            if isinstance(entry, dict) and entry.get("reason"):
-                return str(entry["reason"]).upper()
-        return ""
-
     @classmethod
     def _translate_provider_error(
-        cls,
-        *,
-        provider: str,
-        model: str,
-        exc: Exception,
+        cls, *, provider: str, model: str, exc: Exception
     ) -> APIException:
-        status_code = getattr(exc, "status_code", None)
-        if status_code is None and isinstance(exc, genai_errors.APIError):
-            status_code = getattr(exc, "code", None)
-        request_id = getattr(exc, "request_id", None)
         logger.warning(
             "AI provider request failed provider=%s model=%s error_type=%s "
             "upstream_status=%s provider_code=%s provider_request_id=%s",
             cls._safe_log_value(provider),
             cls._safe_log_value(model),
             type(exc).__name__,
-            cls._safe_log_value(status_code),
+            cls._safe_log_value(getattr(exc, "status_code", None)),
             cls._provider_error_code(exc),
-            cls._safe_log_value(request_id),
+            cls._safe_log_value(getattr(exc, "request_id", None)),
         )
-
-        if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+        if isinstance(exc, (TimeoutError, httpx.TimeoutException, openai.APITimeoutError)):
             return APIException(
                 status_code=504,
                 code="AI_PROVIDER_TIMEOUT",
                 message="The AI provider timed out.",
             )
-        if isinstance(exc, httpx.RequestError):
+        if isinstance(exc, (httpx.RequestError, openai.APIConnectionError)):
             return APIException(
                 status_code=502,
                 code="AI_PROVIDER_CONNECTION_ERROR",
                 message="The AI provider could not be reached.",
             )
-        if isinstance(exc, genai_errors.APIError):
-            upstream_status = getattr(exc, "code", None)
-            provider_status = str(getattr(exc, "status", "")).upper()
-            provider_reason = cls._gemini_error_reason(exc)
-            if (
-                upstream_status in {401}
-                or provider_status
-                in {
-                    "API_KEY_INVALID",
-                    "UNAUTHENTICATED",
-                }
-                or provider_reason == "API_KEY_INVALID"
-            ):
-                return APIException(
-                    status_code=503,
-                    code="AI_PROVIDER_AUTH_FAILED",
-                    message="The configured AI provider credentials were rejected.",
-                )
-            if upstream_status == 403 or provider_status == "PERMISSION_DENIED":
-                return APIException(
-                    status_code=503,
-                    code="AI_PROVIDER_ACCESS_DENIED",
-                    message="The configured AI provider account cannot access this operation.",
-                )
-            if upstream_status == 404 or provider_status == "NOT_FOUND":
-                return APIException(
-                    status_code=503,
-                    code="AI_MODEL_UNAVAILABLE",
-                    message="The configured AI model is unavailable.",
-                )
-            if upstream_status == 429 or provider_status == "RESOURCE_EXHAUSTED":
-                return APIException(
-                    status_code=503,
-                    code="AI_PROVIDER_RATE_LIMITED",
-                    message="The AI provider is temporarily rate limited.",
-                )
-            if upstream_status in {408, 504} or provider_status == "DEADLINE_EXCEEDED":
-                return APIException(
-                    status_code=504,
-                    code="AI_PROVIDER_TIMEOUT",
-                    message="The AI provider timed out.",
-                )
-            if upstream_status and upstream_status >= 500:
-                return APIException(
-                    status_code=503,
-                    code="AI_PROVIDER_UNAVAILABLE",
-                    message="The AI provider is temporarily unavailable.",
-                )
-            if upstream_status == 400:
-                return APIException(
-                    status_code=502,
-                    code="AI_PROVIDER_REQUEST_REJECTED",
-                    message="The AI provider rejected the structured request.",
-                )
-        if isinstance(exc, (openai.APITimeoutError, anthropic.APITimeoutError)):
-            return APIException(
-                status_code=504,
-                code="AI_PROVIDER_TIMEOUT",
-                message="The AI provider timed out.",
-            )
-        if isinstance(exc, (openai.AuthenticationError, anthropic.AuthenticationError)):
+        if isinstance(exc, openai.AuthenticationError):
             return APIException(
                 status_code=503,
                 code="AI_PROVIDER_AUTH_FAILED",
                 message="The configured AI provider credentials were rejected.",
             )
-        if isinstance(exc, (openai.PermissionDeniedError, anthropic.PermissionDeniedError)):
+        if isinstance(exc, openai.PermissionDeniedError):
             return APIException(
                 status_code=503,
                 code="AI_PROVIDER_ACCESS_DENIED",
                 message="The configured AI provider account cannot access this operation.",
             )
-        if isinstance(exc, (openai.NotFoundError, anthropic.NotFoundError)):
+        if isinstance(exc, openai.NotFoundError):
             return APIException(
                 status_code=503,
                 code="AI_MODEL_UNAVAILABLE",
                 message="The configured AI model is unavailable.",
             )
-        if isinstance(exc, (openai.RateLimitError, anthropic.RateLimitError)):
+        if isinstance(exc, openai.RateLimitError):
             return APIException(
                 status_code=503,
                 code="AI_PROVIDER_RATE_LIMITED",
                 message="The AI provider is temporarily rate limited.",
             )
-        if isinstance(exc, (openai.APIConnectionError, anthropic.APIConnectionError)):
-            return APIException(
-                status_code=502,
-                code="AI_PROVIDER_CONNECTION_ERROR",
-                message="The AI provider could not be reached.",
-            )
-        if isinstance(exc, (openai.BadRequestError, anthropic.BadRequestError)):
+        if isinstance(exc, openai.BadRequestError):
             return APIException(
                 status_code=502,
                 code="AI_PROVIDER_REQUEST_REJECTED",
                 message="The AI provider rejected the structured request.",
             )
-        if isinstance(exc, (openai.InternalServerError, anthropic.InternalServerError)):
+        if isinstance(exc, openai.InternalServerError):
             return APIException(
                 status_code=503,
                 code="AI_PROVIDER_UNAVAILABLE",
@@ -262,8 +178,9 @@ class AIProviderGateway:
     @staticmethod
     def _validate_output(raw_text: str, output_schema: type[OutputT]) -> OutputT:
         try:
-            payload = json.loads(AIProviderGateway._json_text(raw_text))
-            return output_schema.model_validate(payload)
+            return output_schema.model_validate(
+                json.loads(AIProviderGateway._json_text(raw_text))
+            )
         except (json.JSONDecodeError, ValidationError) as exc:
             raise APIException(
                 status_code=502,
@@ -273,16 +190,15 @@ class AIProviderGateway:
 
     @staticmethod
     def _strict_json_schema(output_schema: type[OutputT]) -> dict[str, object]:
-        """Build the strict JSON Schema used by OpenAI-compatible providers."""
         schema = output_schema.model_json_schema()
 
         def accepts_null(value: object) -> bool:
             if not isinstance(value, dict):
                 return False
             value_type = value.get("type")
-            if value_type == "null":
-                return True
-            if isinstance(value_type, list) and "null" in value_type:
+            if value_type == "null" or (
+                isinstance(value_type, list) and "null" in value_type
+            ):
                 return True
             alternatives = value.get("anyOf") or value.get("oneOf")
             return isinstance(alternatives, list) and any(
@@ -307,6 +223,15 @@ class AIProviderGateway:
         normalize(schema)
         return schema
 
+    @staticmethod
+    def _client() -> AsyncOpenAI:
+        return AsyncOpenAI(
+            api_key=settings.SUSANOOX_AI_KEY,
+            base_url=SUSANOOX_BASE_URL,
+            timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
+            max_retries=settings.AI_MAX_RETRIES,
+        )
+
     async def _susanoox_generate(
         self,
         *,
@@ -321,12 +246,7 @@ class AIProviderGateway:
                 code="AI_PROVIDER_UNAVAILABLE",
                 message="Susanoox is not configured with a usable credential.",
             )
-        client = AsyncOpenAI(
-            api_key=settings.SUSANOOX_AI_KEY,
-            base_url=SUSANOOX_BASE_URL,
-            timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
-            max_retries=settings.AI_MAX_RETRIES,
-        )
+        client = self._client()
         started = monotonic()
         try:
             response = await client.chat.completions.create(
@@ -336,6 +256,7 @@ class AIProviderGateway:
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.2,
+                max_tokens=settings.AI_MAX_OUTPUT_TOKENS,
                 response_format={
                     "type": "json_schema",
                     "json_schema": {
@@ -344,491 +265,96 @@ class AIProviderGateway:
                         "schema": self._strict_json_schema(output_schema),
                     },
                 },
+                store=False,
+                extra_headers=self._request_headers(),
             )
         finally:
             await client.close()
         choice = response.choices[0] if response.choices else None
         message = getattr(choice, "message", None) if choice else None
-        refusal = getattr(message, "refusal", None) if message else None
         raw_text = getattr(message, "content", None) if message else None
-        if refusal:
-            logger.warning(
-                "Susanoox structured response refused model=%s finish_reason=%s",
-                self._safe_log_value(model),
-                self._safe_log_value(getattr(choice, "finish_reason", None)),
-            )
+        if getattr(message, "refusal", None) or not isinstance(raw_text, str) or not raw_text.strip():
             raise APIException(
                 status_code=502,
                 code="AI_INVALID_RESPONSE",
-                message="The AI provider refused to return a CRM search plan.",
-            )
-        if not isinstance(raw_text, str) or not raw_text.strip():
-            logger.warning(
-                "Susanoox structured response empty model=%s finish_reason=%s content_type=%s",
-                self._safe_log_value(model),
-                self._safe_log_value(getattr(choice, "finish_reason", None)),
-                self._safe_log_value(type(raw_text).__name__),
-            )
-            raise APIException(
-                status_code=502,
-                code="AI_INVALID_RESPONSE",
-                message="The AI provider returned no structured search plan.",
+                message="The AI provider returned no valid structured response.",
             )
         usage = response.usage
-        result = AIProviderResult(
+        return AIProviderResult(
             output=self._validate_output(raw_text, output_schema),
             provider="susanoox",
             model=model,
             input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
             output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
             latency_ms=int((monotonic() - started) * 1000),
-        )
-        logger.info(
-            "AI provider request completed provider=susanoox model=%s latency_ms=%s",
-            self._safe_log_value(model),
-            result.latency_ms,
-        )
-        return result
-
-    @staticmethod
-    def _gemini_client() -> genai.Client:
-        return genai.Client(
-            api_key=settings.GEMINI_API_KEY,
-            http_options=genai_types.HttpOptions(
-                timeout=int(settings.AI_REQUEST_TIMEOUT_SECONDS * 1000),
-                retry_options=genai_types.HttpRetryOptions(
-                    attempts=settings.AI_MAX_RETRIES + 1,
-                    http_status_codes=[408, 429, 500, 502, 503, 504],
-                ),
-            ),
+            usage_available=usage is not None and getattr(usage, "prompt_tokens", None) is not None and getattr(usage, "completion_tokens", None) is not None,
         )
 
-    async def _gemini_generate(
+    async def _susanoox_generate_streaming(
         self,
         *,
         model: str,
         system_prompt: str,
         user_prompt: str,
         output_schema: type[OutputT],
+        on_text_delta: TextDeltaHandler,
     ) -> AIProviderResult:
-        if not self.has_usable_api_key(settings.GEMINI_API_KEY):
+        if not self.has_usable_api_key(settings.SUSANOOX_AI_KEY):
             raise APIException(
                 status_code=503,
                 code="AI_PROVIDER_UNAVAILABLE",
-                message="Gemini is not configured with a usable credential.",
+                message="Susanoox is not configured with a usable credential.",
             )
-        client = self._gemini_client()
+        client = self._client()
         started = monotonic()
+        raw_parts: list[str] = []
+        usage = None
         try:
-            response = await client.aio.models.generate_content(
+            stream = await client.chat.completions.create(
                 model=model,
-                contents=user_prompt,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    temperature=0.2,
-                    response_mime_type="application/json",
-                    response_schema=output_schema,
-                    automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
-                        disable=True
-                    ),
-                ),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.2,
+                max_tokens=settings.AI_MAX_OUTPUT_TOKENS,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": output_schema.__name__.lower(),
+                        "strict": True,
+                        "schema": self._strict_json_schema(output_schema),
+                    },
+                },
+                store=False,
+                extra_headers=self._request_headers(),
+                stream=True,
+                stream_options={"include_usage": True},
             )
+            async for chunk in stream:
+                usage = getattr(chunk, "usage", None) or usage
+                for choice in getattr(chunk, "choices", []) or []:
+                    delta = getattr(getattr(choice, "delta", None), "content", None)
+                    if isinstance(delta, str) and delta:
+                        raw_parts.append(delta)
+                        await on_text_delta(delta)
         finally:
-            await client.aio.aclose()
-        parsed = getattr(response, "parsed", None)
-        if parsed is None:
-            raw_text = getattr(response, "text", None)
-            if not raw_text:
-                raise APIException(
-                    status_code=502,
-                    code="AI_INVALID_RESPONSE",
-                    message="The AI provider returned no structured result.",
-                )
-            output = self._validate_output(raw_text, output_schema)
-        else:
-            try:
-                output = output_schema.model_validate(parsed)
-            except ValidationError as exc:
-                raise APIException(
-                    status_code=502,
-                    code="AI_INVALID_RESPONSE",
-                    message="The AI provider returned an invalid structured response.",
-                ) from exc
-        usage = getattr(response, "usage_metadata", None)
-        return AIProviderResult(
-            output=output,
-            provider="gemini",
-            model=model,
-            input_tokens=int(getattr(usage, "prompt_token_count", 0) or 0),
-            output_tokens=int(getattr(usage, "candidates_token_count", 0) or 0),
-            latency_ms=int((monotonic() - started) * 1000),
-        )
-
-    async def _gemini_generate_grounded(
-        self,
-        *,
-        model: str,
-        system_prompt: str,
-        user_prompt: str,
-        output_schema: type[OutputT],
-    ) -> AIProviderResult:
-        if not self.has_usable_api_key(settings.GEMINI_API_KEY):
-            raise APIException(
-                status_code=503,
-                code="AI_WEB_RESEARCH_UNAVAILABLE",
-                message="AI web research is not configured with a usable credential.",
-            )
-        client = self._gemini_client()
-        started = monotonic()
-        try:
-            response = await client.aio.models.generate_content(
-                model=model,
-                contents=user_prompt,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    temperature=0.2,
-                    response_mime_type="application/json",
-                    response_schema=output_schema,
-                    tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
-                    automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
-                        disable=True
-                    ),
-                ),
-            )
-        finally:
-            await client.aio.aclose()
-        parsed = getattr(response, "parsed", None)
-        raw_text = getattr(response, "text", None)
-        if parsed is None and not raw_text:
+            await client.close()
+        raw_text = "".join(raw_parts)
+        if not raw_text.strip():
             raise APIException(
                 status_code=502,
                 code="AI_INVALID_RESPONSE",
-                message="The AI provider returned no structured research result.",
+                message="The AI provider returned no valid structured response.",
             )
-        try:
-            output = (
-                output_schema.model_validate(parsed)
-                if parsed is not None
-                else self._validate_output(str(raw_text), output_schema)
-            )
-        except ValidationError as exc:
-            raise APIException(
-                status_code=502,
-                code="AI_INVALID_RESPONSE",
-                message="The AI provider returned an invalid structured response.",
-            ) from exc
-
-        sources: set[str] = set()
-        for candidate in getattr(response, "candidates", None) or []:
-            metadata = getattr(candidate, "grounding_metadata", None)
-            for chunk in getattr(metadata, "grounding_chunks", None) or []:
-                url = getattr(getattr(chunk, "web", None), "uri", None)
-                if url:
-                    sources.add(str(url))
-        if "sources" in output.__class__.model_fields:
-            output = output.model_copy(update={"sources": sorted(sources)})
-        usage = getattr(response, "usage_metadata", None)
-        return AIProviderResult(
-            output=output,
-            provider="gemini",
-            model=model,
-            input_tokens=int(getattr(usage, "prompt_token_count", 0) or 0),
-            output_tokens=int(getattr(usage, "candidates_token_count", 0) or 0),
-            latency_ms=int((monotonic() - started) * 1000),
-        )
-
-    async def _openai_generate(
-        self,
-        *,
-        model: str,
-        system_prompt: str,
-        user_prompt: str,
-        output_schema: type[OutputT],
-    ) -> AIProviderResult:
-        if not self.has_usable_api_key(settings.OPENAI_API_KEY):
-            raise APIException(
-                status_code=503,
-                code="AI_PROVIDER_UNAVAILABLE",
-                message="OpenAI is not configured with a usable credential.",
-            )
-        client = AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
-            max_retries=settings.AI_MAX_RETRIES,
-        )
-        started = monotonic()
-        response = await client.responses.parse(
-            model=model,
-            instructions=system_prompt,
-            input=user_prompt,
-            text_format=output_schema,
-            temperature=0.2,
-        )
-        if response.output_parsed is None:
-            raise APIException(
-                status_code=502,
-                code="AI_INVALID_RESPONSE",
-                message="The AI provider returned no structured result.",
-            )
-        usage = response.usage
-        return AIProviderResult(
-            output=output_schema.model_validate(response.output_parsed),
-            provider="openai",
-            model=model,
-            input_tokens=int(usage.input_tokens if usage else 0),
-            output_tokens=int(usage.output_tokens if usage else 0),
-            latency_ms=int((monotonic() - started) * 1000),
-        )
-
-    async def _openai_generate_grounded(
-        self,
-        *,
-        model: str,
-        system_prompt: str,
-        user_prompt: str,
-        output_schema: type[OutputT],
-    ) -> AIProviderResult:
-        if not self.has_usable_api_key(settings.OPENAI_API_KEY):
-            raise APIException(
-                status_code=503,
-                code="AI_WEB_RESEARCH_UNAVAILABLE",
-                message="AI web research is not configured with a usable credential.",
-            )
-        client = AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
-            max_retries=settings.AI_MAX_RETRIES,
-        )
-        started = monotonic()
-        response = await client.responses.parse(
-            model=model,
-            instructions=system_prompt,
-            input=user_prompt,
-            tools=[{"type": "web_search", "search_context_size": "medium"}],
-            tool_choice="required",
-            include=["web_search_call.action.sources"],
-            text_format=output_schema,
-        )
-        if response.output_parsed is None:
-            raise APIException(
-                status_code=502,
-                code="AI_INVALID_RESPONSE",
-                message="The AI provider returned no structured research result.",
-            )
-
-        sources: set[str] = set()
-        for item in response.output:
-            if getattr(item, "type", None) == "web_search_call":
-                for source in getattr(getattr(item, "action", None), "sources", None) or []:
-                    if getattr(source, "url", None):
-                        sources.add(source.url)
-            if getattr(item, "type", None) == "message":
-                for content in getattr(item, "content", []) or []:
-                    for annotation in getattr(content, "annotations", []) or []:
-                        if getattr(annotation, "type", None) == "url_citation" and getattr(
-                            annotation, "url", None
-                        ):
-                            sources.add(annotation.url)
-        output = output_schema.model_validate(response.output_parsed)
-        if "sources" in output.__class__.model_fields:
-            output = output.model_copy(update={"sources": sorted(sources)})
-        usage = response.usage
-        return AIProviderResult(
-            output=output,
-            provider="openai",
-            model=model,
-            input_tokens=int(usage.input_tokens if usage else 0),
-            output_tokens=int(usage.output_tokens if usage else 0),
-            latency_ms=int((monotonic() - started) * 1000),
-        )
-
-    async def transcribe_audio(
-        self,
-        *,
-        file_name: str,
-        content: bytes,
-        content_type: str,
-        provider: str | None = None,
-        model: str | None = None,
-    ) -> AIProviderResult:
-        selected_provider = (provider or settings.AI_PROVIDER).lower()
-        selected_model = model or settings.AI_TRANSCRIPTION_MODEL
-        if selected_provider == "gemini":
-            try:
-                return await self._gemini_transcribe_audio(
-                    model=selected_model,
-                    content=content,
-                    content_type=content_type,
-                )
-            except APIException:
-                raise
-            except (
-                genai_errors.APIError,
-                httpx.RequestError,
-                TimeoutError,
-            ) as exc:
-                raise self._translate_provider_error(
-                    provider="gemini",
-                    model=selected_model,
-                    exc=exc,
-                ) from exc
-        if selected_provider != "openai":
-            raise APIException(
-                status_code=503,
-                code="AI_TRANSCRIPTION_UNAVAILABLE",
-                message="The selected provider does not support configured transcription.",
-            )
-        if not self.has_usable_api_key(settings.OPENAI_API_KEY):
-            raise APIException(
-                status_code=503,
-                code="AI_TRANSCRIPTION_UNAVAILABLE",
-                message="The transcription provider is not configured with a usable credential.",
-            )
-        client = AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
-            max_retries=settings.AI_MAX_RETRIES,
-        )
-        started = monotonic()
-        try:
-            response = await client.audio.transcriptions.create(
-                model=selected_model,
-                file=(file_name, content, content_type),
-                response_format="verbose_json",
-                timestamp_granularities=["segment"],
-            )
-        except openai.APIError as exc:
-            raise self._translate_provider_error(
-                provider="openai",
-                model=selected_model,
-                exc=exc,
-            ) from exc
-
-        segments = [
-            TranscriptionSegment(
-                speaker=getattr(segment, "speaker", None),
-                start_seconds=float(getattr(segment, "start", 0)),
-                end_seconds=float(getattr(segment, "end", 0)),
-                text=str(getattr(segment, "text", "")),
-            )
-            for segment in (getattr(response, "segments", None) or [])
-        ]
-        output = TranscriptionResponse(
-            text=str(getattr(response, "text", "")),
-            language=getattr(response, "language", None),
-            duration_seconds=getattr(response, "duration", None),
-            segments=segments,
-        )
-        return AIProviderResult(
-            output=output,
-            provider="openai",
-            model=selected_model,
-            input_tokens=0,
-            output_tokens=0,
-            latency_ms=int((monotonic() - started) * 1000),
-        )
-
-    async def _gemini_transcribe_audio(
-        self,
-        *,
-        model: str,
-        content: bytes,
-        content_type: str,
-    ) -> AIProviderResult:
-        if not self.has_usable_api_key(settings.GEMINI_API_KEY):
-            raise APIException(
-                status_code=503,
-                code="AI_TRANSCRIPTION_UNAVAILABLE",
-                message="The transcription provider is not configured with a usable credential.",
-            )
-        client = self._gemini_client()
-        started = monotonic()
-        contents: list[str | genai_types.Part] = [
-            "Transcribe this audio. Include only timestamps and speaker labels that can "
-            "be determined from the audio; do not invent them.",
-            genai_types.Part.from_bytes(data=content, mime_type=content_type),
-        ]
-        try:
-            response = await client.aio.models.generate_content(
-                model=model,
-                contents=cast(Any, contents),
-                config=genai_types.GenerateContentConfig(
-                    temperature=0,
-                    response_mime_type="application/json",
-                    response_schema=TranscriptionResponse,
-                    automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
-                        disable=True
-                    ),
-                ),
-            )
-        finally:
-            await client.aio.aclose()
-        parsed = getattr(response, "parsed", None)
-        raw_text = getattr(response, "text", None)
-        if parsed is None and not raw_text:
-            raise APIException(
-                status_code=502,
-                code="AI_INVALID_RESPONSE",
-                message="The AI provider returned no transcription response.",
-            )
-        try:
-            output = (
-                TranscriptionResponse.model_validate(parsed)
-                if parsed is not None
-                else self._validate_output(str(raw_text), TranscriptionResponse)
-            )
-        except ValidationError as exc:
-            raise APIException(
-                status_code=502,
-                code="AI_INVALID_RESPONSE",
-                message="The AI provider returned an invalid transcription response.",
-            ) from exc
-        usage = getattr(response, "usage_metadata", None)
-        return AIProviderResult(
-            output=output,
-            provider="gemini",
-            model=model,
-            input_tokens=int(getattr(usage, "prompt_token_count", 0) or 0),
-            output_tokens=int(getattr(usage, "candidates_token_count", 0) or 0),
-            latency_ms=int((monotonic() - started) * 1000),
-        )
-
-    async def _anthropic_generate(
-        self,
-        *,
-        model: str,
-        system_prompt: str,
-        user_prompt: str,
-        output_schema: type[OutputT],
-    ) -> AIProviderResult:
-        if not self.has_usable_api_key(settings.ANTHROPIC_API_KEY):
-            raise APIException(
-                status_code=503,
-                code="AI_PROVIDER_UNAVAILABLE",
-                message="Anthropic is not configured with a usable credential.",
-            )
-        client = AsyncAnthropic(
-            api_key=settings.ANTHROPIC_API_KEY,
-            timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
-            max_retries=settings.AI_MAX_RETRIES,
-        )
-        started = monotonic()
-        response = await client.messages.create(
-            model=model,
-            max_tokens=2048,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        raw_text = "".join(
-            block.text for block in response.content if isinstance(block, anthropic.types.TextBlock)
-        )
         return AIProviderResult(
             output=self._validate_output(raw_text, output_schema),
-            provider="anthropic",
+            provider="susanoox",
             model=model,
-            input_tokens=int(response.usage.input_tokens),
-            output_tokens=int(response.usage.output_tokens),
+            input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+            output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
             latency_ms=int((monotonic() - started) * 1000),
+            usage_available=usage is not None and getattr(usage, "prompt_tokens", None) is not None and getattr(usage, "completion_tokens", None) is not None,
         )
 
     async def _generate_once(
@@ -839,88 +365,35 @@ class AIProviderGateway:
         system_prompt: str,
         user_prompt: str,
         output_schema: type[OutputT],
+        on_text_delta: TextDeltaHandler | None = None,
     ) -> AIProviderResult:
-        try:
-            if provider == "openai":
-                return await self._openai_generate(
-                    model=model,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    output_schema=output_schema,
-                )
-            if provider == "susanoox":
-                return await self._susanoox_generate(
-                    model=model,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    output_schema=output_schema,
-                )
-            if provider == "anthropic":
-                return await self._anthropic_generate(
-                    model=model,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    output_schema=output_schema,
-                )
-            if provider == "gemini":
-                return await self._gemini_generate(
-                    model=model,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    output_schema=output_schema,
-                )
+        if provider != "susanoox":
             raise APIException(
                 status_code=503,
                 code="AI_PROVIDER_UNAVAILABLE",
-                message="The configured AI provider is unsupported.",
+                message="Only the Susanoox AI provider is supported.",
+            )
+        try:
+            if on_text_delta is not None:
+                return await self._susanoox_generate_streaming(
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    output_schema=output_schema,
+                    on_text_delta=on_text_delta,
+                )
+            return await self._susanoox_generate(
+                model=model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                output_schema=output_schema,
             )
         except APIException:
             raise
-        except (
-            openai.APIError,
-            anthropic.APIError,
-            genai_errors.APIError,
-            httpx.RequestError,
-            TimeoutError,
-        ) as exc:
+        except (openai.APIError, httpx.RequestError, TimeoutError) as exc:
             raise self._translate_provider_error(
-                provider=provider,
-                model=model,
-                exc=exc,
+                provider="susanoox", model=model, exc=exc
             ) from exc
-
-    @staticmethod
-    def _fallback_candidate(primary_provider: str) -> tuple[str, str] | None:
-        if (
-            primary_provider == "openai"
-            and AIProviderGateway.has_usable_api_key(settings.ANTHROPIC_API_KEY)
-            and settings.AI_ANTHROPIC_FALLBACK_MODEL
-        ):
-            return "anthropic", settings.AI_ANTHROPIC_FALLBACK_MODEL
-        if (
-            primary_provider == "anthropic"
-            and AIProviderGateway.has_usable_api_key(settings.OPENAI_API_KEY)
-            and settings.AI_OPENAI_FALLBACK_MODEL
-        ):
-            return "openai", settings.AI_OPENAI_FALLBACK_MODEL
-        if (
-            primary_provider not in {"gemini", "susanoox"}
-            and AIProviderGateway.has_usable_api_key(settings.GEMINI_API_KEY)
-            and settings.AI_GEMINI_FALLBACK_MODEL
-        ):
-            return "gemini", settings.AI_GEMINI_FALLBACK_MODEL
-        if primary_provider == "gemini":
-            if (
-                AIProviderGateway.has_usable_api_key(settings.ANTHROPIC_API_KEY)
-                and settings.AI_ANTHROPIC_FALLBACK_MODEL
-            ):
-                return "anthropic", settings.AI_ANTHROPIC_FALLBACK_MODEL
-            if (
-                AIProviderGateway.has_usable_api_key(settings.OPENAI_API_KEY)
-                and settings.AI_OPENAI_FALLBACK_MODEL
-            ):
-                return "openai", settings.AI_OPENAI_FALLBACK_MODEL
-        return None
 
     async def generate_structured(
         self,
@@ -931,63 +404,42 @@ class AIProviderGateway:
         provider: str | None = None,
         model: str | None = None,
         web_search: bool = False,
+        on_text_delta: TextDeltaHandler | None = None,
     ) -> AIProviderResult:
-        selected_provider = (provider or settings.AI_PROVIDER).lower()
-        selected_model = model or settings.AI_MODEL
+        if (provider or "susanoox").lower() != "susanoox":
+            raise APIException(
+                status_code=503,
+                code="AI_PROVIDER_UNAVAILABLE",
+                message="Only the Susanoox AI provider is supported.",
+            )
         if web_search:
-            if selected_provider not in {"openai", "gemini"}:
-                raise APIException(
-                    status_code=503,
-                    code="AI_WEB_RESEARCH_UNAVAILABLE",
-                    message="The selected provider does not support configured web research.",
-                )
-            try:
-                if selected_provider == "gemini":
-                    return await self._gemini_generate_grounded(
-                        model=selected_model,
-                        system_prompt=system_prompt,
-                        user_prompt=user_prompt,
-                        output_schema=output_schema,
-                    )
-                return await self._openai_generate_grounded(
-                    model=selected_model,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    output_schema=output_schema,
-                )
-            except APIException:
-                raise
-            except (
-                openai.APIError,
-                genai_errors.APIError,
-                httpx.RequestError,
-                TimeoutError,
-            ) as exc:
-                raise self._translate_provider_error(
-                    provider=selected_provider,
-                    model=selected_model,
-                    exc=exc,
-                ) from exc
-        if selected_provider == "susanoox":
-            ordered_models = list(dict.fromkeys([selected_model, *settings.susanoox_model_pool]))
-            candidates = [("susanoox", item) for item in ordered_models]
-        else:
-            candidates = [(selected_provider, selected_model)]
-            fallback = self._fallback_candidate(selected_provider)
-            if fallback:
-                candidates.append(fallback)
-
+            raise APIException(
+                status_code=503,
+                code="AI_WEB_RESEARCH_UNAVAILABLE",
+                message="Susanoox web research is not configured for this deployment.",
+            )
+        selected_model = model or settings.AI_MODEL
+        candidates = list(dict.fromkeys([selected_model, *settings.susanoox_model_pool]))
         last_error: APIException | None = None
         attempted_models: list[str] = []
-        for candidate_provider, candidate_model in candidates:
+        stream_started = False
+
+        async def guarded_delta(delta: str) -> None:
+            nonlocal stream_started
+            stream_started = True
+            if on_text_delta is not None:
+                await on_text_delta(delta)
+
+        for candidate_model in candidates:
             attempted_models.append(candidate_model)
             try:
                 result = await self._generate_once(
-                    provider=candidate_provider,
+                    provider="susanoox",
                     model=candidate_model,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     output_schema=output_schema,
+                    on_text_delta=guarded_delta if on_text_delta is not None else None,
                 )
                 return replace(
                     result,
@@ -996,23 +448,27 @@ class AIProviderGateway:
                 )
             except APIException as exc:
                 last_error = exc
-                if exc.code not in self._RETRYABLE_CODES:
+                if stream_started or exc.code not in self._RETRYABLE_CODES:
                     raise
                 if len(attempted_models) < len(candidates):
                     logger.warning(
-                        "AI model failed with retryable error; attempting next fallback "
-                        "provider=%s model=%s error_code=%s",
-                        candidate_provider,
+                        "Susanoox model failed; attempting configured fallback model=%s code=%s",
                         self._safe_log_value(candidate_model),
                         exc.code,
                     )
-
         if last_error:
             raise last_error
         raise APIException(
             status_code=503,
             code="AI_PROVIDER_UNAVAILABLE",
-            message="No AI provider is configured.",
+            message="No Susanoox model is configured.",
+        )
+
+    async def transcribe_audio(self, **_kwargs: object) -> AIProviderResult:
+        raise APIException(
+            status_code=503,
+            code="AI_TRANSCRIPTION_UNAVAILABLE",
+            message="Audio transcription is unavailable with the configured Susanoox provider.",
         )
 
 

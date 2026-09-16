@@ -275,7 +275,14 @@ class TaskService:
         return task_to_dict(task)
 
     async def create_task(
-        self, db: AsyncSession, payload: TaskCreate, current_user: User | None = None
+        self,
+        db: AsyncSession,
+        payload: TaskCreate,
+        current_user: User | None = None,
+        *,
+        ai_action_id: str | None = None,
+        commit: bool = True,
+        notify: bool = True,
     ) -> dict:
         org_id = await organization_service.resolve_valid_org_id(db, current_user)
         if current_user is None:
@@ -326,6 +333,7 @@ class TaskService:
             "created_by": current_user.id,
             "project_id": project_id,
             "ticket_id": ticket_id,
+            "ai_action_id": ai_action_id,
             **relationships,
         }
         task = await self.repository.create(db, data=data)
@@ -342,8 +350,17 @@ class TaskService:
             payload={"status": task.status, "priority": task.priority},
         )
         await self._recalculate_project(db, task.project_id, task.organization_id)
-        await self._commit(db, "Failed to create task")
-        await db.refresh(task)
+        if commit:
+            await self._commit(db, "Failed to create task")
+            await db.refresh(task)
+        if notify:
+            await self.notify_created(db, task, current_user)
+        return task_to_dict(task)
+
+    @staticmethod
+    async def notify_created(
+        db: AsyncSession, task: Task, current_user: User | None
+    ) -> None:
         await notification_service.notify(
             db,
             event_name="task.created",
@@ -361,7 +378,6 @@ class TaskService:
                 "assigned_to": task.assigned_to,
             },
         )
-        return task_to_dict(task)
 
     async def get_overdue_tasks(
         self, db: AsyncSession, organization_id: str, current_user: User | None = None

@@ -8,6 +8,7 @@ from app.models.ai import (
     AIOrganizationConfig,
     AIPrompt,
     AIRun,
+    AIToolAudit,
     AITranscript,
 )
 from app.models.audit import ActivityLog, AuditLog
@@ -203,6 +204,7 @@ __all__ = [
     "AIMeetingSummary",
     "AIOrganizationConfig",
     "AIRun",
+    "AIToolAudit",
     "AITranscript",
     "SystemSetting",
     "CustomField",

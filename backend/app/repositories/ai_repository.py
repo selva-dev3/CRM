@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import and_, false, func, or_, select
+from sqlalchemy import and_, case, delete, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.record_access import RecordAccessContext, record_access_filter
@@ -15,6 +15,7 @@ from app.models import (
     AIOrganizationConfig,
     AIPrompt,
     AIRun,
+    AIToolAudit,
     AITranscript,
     CalendarEventModel,
     CallLog,
@@ -502,11 +503,13 @@ class AIRepository:
         organization_id: str,
         user_id: str,
     ) -> AIConversation | None:
+        now = datetime.now(UTC)
         result = await db.execute(
             select(AIConversation).where(
                 AIConversation.id == conversation_id,
                 AIConversation.organization_id == organization_id,
                 AIConversation.user_id == user_id,
+                or_(AIConversation.expires_at.is_(None), AIConversation.expires_at > now),
             )
         )
         return result.scalars().first()
@@ -520,6 +523,7 @@ class AIRepository:
         page: int = 1,
         limit: int = 25,
     ) -> list[tuple[AIConversation, datetime]]:
+        now = datetime.now(UTC)
         last_message = (
             select(
                 AIPrompt.conversation_id,
@@ -537,6 +541,7 @@ class AIRepository:
             .where(
                 AIConversation.organization_id == organization_id,
                 AIConversation.user_id == user_id,
+                or_(AIConversation.expires_at.is_(None), AIConversation.expires_at > now),
             )
             .order_by(
                 func.coalesce(last_message.c.last_message_at, AIConversation.created_at).desc(),
@@ -550,12 +555,14 @@ class AIRepository:
     async def count_conversations(
         self, db: AsyncSession, *, organization_id: str, user_id: str
     ) -> int:
+        now = datetime.now(UTC)
         result = await db.execute(
             select(func.count())
             .select_from(AIConversation)
             .where(
                 AIConversation.organization_id == organization_id,
                 AIConversation.user_id == user_id,
+                or_(AIConversation.expires_at.is_(None), AIConversation.expires_at > now),
             )
         )
         return int(result.scalar_one())
@@ -632,7 +639,7 @@ class AIRepository:
         await db.flush()
         return action
 
-    async def get_pending_action(
+    async def get_action_for_execution(
         self,
         db: AsyncSession,
         *,
@@ -646,11 +653,33 @@ class AIRepository:
                 AIAction.id == action_id,
                 AIAction.organization_id == organization_id,
                 AIAction.user_id == user_id,
-                AIAction.status == "pending",
+                AIAction.status.in_(("pending", "executing", "executed")),
             )
             .with_for_update()
         )
         return result.scalars().first()
+
+    async def get_pending_action(
+        self,
+        db: AsyncSession,
+        *,
+        action_id: str,
+        organization_id: str,
+        user_id: str,
+    ) -> AIAction | None:
+        """Backward-compatible alias for callers migrating to crash-safe execution."""
+        return await self.get_action_for_execution(
+            db,
+            action_id=action_id,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+
+    async def create_tool_audit(self, db: AsyncSession, **data: object) -> AIToolAudit:
+        audit = AIToolAudit(**data)
+        db.add(audit)
+        await db.flush()
+        return audit
 
     async def create_transcript(self, db: AsyncSession, **data: object) -> AITranscript:
         transcript = AITranscript(**data)
@@ -790,9 +819,24 @@ class AIRepository:
         now = datetime.now(UTC)
         month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
         result = await db.execute(
-            select(func.coalesce(func.sum(AIRun.estimated_cost_usd), 0.0)).where(
+            select(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                (AIRun.status == "succeeded")
+                                & (AIRun.pricing_status == "known"),
+                                AIRun.estimated_cost_usd,
+                            ),
+                            (AIRun.status == "succeeded", AIRun.reserved_cost_usd),
+                            (AIRun.status == "started", AIRun.reserved_cost_usd),
+                            else_=0.0,
+                        )
+                    ),
+                    0.0,
+                )
+            ).where(
                 AIRun.organization_id == organization_id,
-                AIRun.status == "succeeded",
                 AIRun.created_at >= month_start,
             )
         )
@@ -815,7 +859,9 @@ class AIRepository:
         await db.flush()
         return run
 
-    async def usage_totals(self, db: AsyncSession, organization_id: str) -> dict[str, float | int]:
+    async def usage_totals(
+        self, db: AsyncSession, organization_id: str
+    ) -> dict[str, float | int | str]:
         now = datetime.now(UTC)
         month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
         result = await db.execute(
@@ -823,16 +869,19 @@ class AIRepository:
                 func.coalesce(func.sum(AIRun.total_tokens), 0),
                 func.coalesce(func.sum(AIRun.estimated_cost_usd), 0.0),
                 func.count(AIRun.id),
+                func.count(AIRun.id).filter(AIRun.pricing_status != "known"),
             ).where(
                 AIRun.organization_id == organization_id,
                 AIRun.created_at >= month_start,
             )
         )
-        tokens, cost, request_count = result.one()
+        tokens, cost, request_count, unknown_pricing_count = result.one()
         return {
             "tokens_used_this_month": int(tokens),
             "estimated_cost_usd": float(cost),
             "request_count": int(request_count),
+            "unknown_pricing_request_count": int(unknown_pricing_count),
+            "pricing_status": "known" if not unknown_pricing_count else "partial",
         }
 
     async def save_lead_score(
@@ -898,12 +947,14 @@ class AIRepository:
         user_id: str,
         title: str,
         model_name: str,
+        expires_at: datetime | None = None,
     ) -> AIConversation:
         conversation = AIConversation(
             organization_id=organization_id,
             user_id=user_id,
             title=title,
             model_name=model_name,
+            expires_at=expires_at,
         )
         db.add(conversation)
         await db.flush()
@@ -934,6 +985,22 @@ class AIRepository:
         )
         db.add(prompt)
         return prompt
+
+    async def purge_expired_conversations(
+        self, db: AsyncSession, *, now: datetime
+    ) -> int:
+        result = await db.execute(
+            delete(AIConversation).where(
+                AIConversation.expires_at.is_not(None),
+                AIConversation.expires_at <= now,
+            )
+        )
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    async def purge_expired_actions(self, db: AsyncSession, *, cutoff: datetime) -> int:
+        """Delete expired proposal payloads after the configured privacy window."""
+        result = await db.execute(delete(AIAction).where(AIAction.created_at <= cutoff))
+        return int(getattr(result, "rowcount", 0) or 0)
 
     async def search_context(
         self,

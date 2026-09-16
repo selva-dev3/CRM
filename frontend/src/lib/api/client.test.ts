@@ -56,7 +56,7 @@ describe('apiClient cookie authentication', () => {
     }
   });
 
-  it('identifies the request organization when reporting an unavailable context', async () => {
+  it('does not apply an unavailable-context error after organization replacement', async () => {
     setOrganizationContext('old-organization');
     const listener = vi.fn();
     window.addEventListener('organization:unavailable', listener);
@@ -64,8 +64,10 @@ describe('apiClient cookie authentication', () => {
       setOrganizationContext('new-organization');
       return { ok: false, status: 403, json: async () => ({ code: 'ORGANIZATION_UNAVAILABLE', message: 'Unavailable' }) };
     }));
-    await expect(apiClient.get('/roles')).rejects.toThrow('Unavailable');
-    expect(listener.mock.calls[0][0].detail).toBe('old-organization');
+    await expect(apiClient.get('/roles')).rejects.toThrow(
+      'The authenticated request belongs to a superseded session.',
+    );
+    expect(listener).not.toHaveBeenCalled();
     window.removeEventListener('organization:unavailable', listener);
   });
 
@@ -432,6 +434,22 @@ describe('apiClient cookie authentication', () => {
     await expect(response.text()).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it('stops consuming an authenticated stream after an organization switch', async () => {
+    setOrganizationContext('org-a');
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: org-a private data\n\n'));
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(source, { status: 200 })));
+
+    const response = await openApiStream('/ai/sales-assistant/chat/stream', { message: 'Pipeline' });
+    await Promise.resolve();
+    setOrganizationContext('org-b');
+
+    await expect(response.text()).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   it('continues streaming while the authenticated session is unchanged', async () => {
     const source = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -444,6 +462,32 @@ describe('apiClient cookie authentication', () => {
     const response = await openApiStream('/ai/chat', { prompt: 'Pipeline' });
 
     await expect(response.text()).resolves.toBe('data: permitted\n\n');
+  });
+
+  it('keeps the caller abort linked after stream headers and the first event', async () => {
+    let serverController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let serverCancelled = false;
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        serverController = controller;
+        controller.enqueue(new TextEncoder().encode('data: first\n\n'));
+      },
+      cancel() { serverCancelled = true; },
+    });
+    let fetchSignal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (_url, options: RequestInit) => {
+      fetchSignal = options.signal as AbortSignal;
+      return new Response(source, { status: 200 });
+    }));
+    const controller = new AbortController();
+    const response = await openApiStream('/ai/sales-assistant/chat/stream', {}, controller.signal);
+    const reader = response.body!.getReader();
+    expect((await reader.read()).value).toEqual(new TextEncoder().encode('data: first\n\n'));
+    controller.abort();
+    expect(fetchSignal?.aborted).toBe(true);
+    await expect(reader.read()).rejects.toMatchObject({ name: 'AbortError' });
+    expect(serverCancelled).toBe(true);
+    expect(() => serverController?.enqueue(new Uint8Array())).toThrow();
   });
 
   it('does not refresh or redirect when an account changes before a delayed 401', async () => {
