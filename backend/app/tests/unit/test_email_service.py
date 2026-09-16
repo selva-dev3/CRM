@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import ANY, AsyncMock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +15,7 @@ from app.services.email_domain_service import (
     email_to_dict,
     template_to_dict,
 )
+from app.services.email_service import send_email as send_email_via_brevo
 
 
 def _make_email(**overrides) -> Email:
@@ -48,6 +49,25 @@ def _make_template(**overrides) -> EmailTemplate:
 
 def _user() -> User:
     return User(id="user-1", email="user@crm.com", organization_id="org-1")
+
+
+def test_brevo_sender_does_not_request_without_api_key(monkeypatch):
+    post = Mock()
+    monkeypatch.setattr("app.services.email_service.settings.BREVO_API_KEY", None)
+    monkeypatch.setattr("app.services.email_service.requests.post", post)
+
+    assert send_email_via_brevo("client@example.com", "Hello", "<p>Hi</p>") is False
+    post.assert_not_called()
+
+
+def test_brevo_sender_passes_configured_key_and_json_payload(monkeypatch):
+    post = Mock(return_value=Mock(status_code=201))
+    monkeypatch.setattr("app.services.email_service.settings.BREVO_API_KEY", "test-provider-key")
+    monkeypatch.setattr("app.services.email_service.requests.post", post)
+
+    assert send_email_via_brevo("client@example.com", "Hello", "<p>Hi</p>") is True
+    assert post.call_args.kwargs["headers"]["api-key"] == "test-provider-key"
+    assert post.call_args.kwargs["json"]["to"] == [{"email": "client@example.com"}]
 
 
 @pytest.fixture(autouse=True)

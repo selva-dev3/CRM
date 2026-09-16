@@ -68,16 +68,20 @@ def send_tracked_email(
 
 
 def send_email(to_email: str, subject: str, html_content: str) -> bool:
+    api_key = settings.BREVO_API_KEY
+    if not api_key:
+        logger.error("Email provider is not configured")
+        return False
 
     url = "https://api.brevo.com/v3/smtp/email"
 
     headers = {
         "accept": "application/json",
-        "api-key": settings.BREVO_API_KEY,
+        "api-key": api_key,
         "content-type": "application/json",
     }
 
-    payload = {
+    payload: dict[str, Any] = {
         "sender": {
             "name": settings.EMAILS_FROM_NAME,
             "email": settings.EMAILS_FROM_EMAIL,
