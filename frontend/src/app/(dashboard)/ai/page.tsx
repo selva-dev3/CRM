@@ -56,8 +56,11 @@ function displayValue(value: unknown): string {
 function ResultBlock({ block }: { readonly block: AIResultBlock }) {
   const columnKeys = Array.from(
     new Set(block.results.flatMap((record) => Object.keys(record))),
-  ).slice(0, 8);
-  const rows = block.results.slice(0, 20).map((record, index) => ({
+  ).filter((column) => (
+    column !== 'id' && column !== 'organization_id'
+    && column !== 'custom_fields' && !column.endsWith('_id')
+  )).slice(0, 8);
+  const rows = block.results.map((record, index) => ({
     key: String(record.id ?? `${block.key}-${index}`),
     record,
   }));
@@ -90,6 +93,11 @@ function ResultBlock({ block }: { readonly block: AIResultBlock }) {
           transparent
           padding={false}
         />
+      )}
+      {block.intent === 'list' && block.results.length >= 50 && (
+        <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          Showing the first 50 matching records. More records may be available in the CRM module.
+        </p>
       )}
     </section>
   );

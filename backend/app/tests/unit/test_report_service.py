@@ -669,6 +669,23 @@ async def test_resolve_org_id_strict_isolation():
 
 
 @pytest.mark.asyncio
+async def test_resolve_org_id_uses_platform_admin_selected_organization():
+    service = ReportService(repository=ReportRepository())
+    db = AsyncMock(spec=AsyncSession)
+    actor = _make_user(org_id=None)
+    actor.is_platform_admin = True
+    actor.__dict__["_request_organization_id"] = "org-selected"
+
+    assert await service._resolve_org_id(db, "org-selected", actor) == "org-selected"
+    with pytest.raises(ForbiddenError):
+        await service._resolve_org_id(db, "org-other", actor)
+
+    actor.__dict__.pop("_request_organization_id")
+    with pytest.raises(ForbiddenError):
+        await service._resolve_org_id(db, current_user=actor)
+
+
+@pytest.mark.asyncio
 async def test_list_custom_reports_pagination():
     repo: Any = ReportRepository()
     repo.list_custom_reports = AsyncMock(return_value=[])

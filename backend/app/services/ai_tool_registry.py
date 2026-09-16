@@ -355,6 +355,10 @@ class AIToolRegistry:
             or plan.date_range
             or plan.inactive_days
             or plan.minimum_open_deal_amount is not None
+            or (
+                name == "search_deals"
+                and (plan.status or "").strip().lower() in {"open", "won", "lost"}
+            )
         )
         records: list[dict[str, object]]
         if simple and plan.intent == "list":

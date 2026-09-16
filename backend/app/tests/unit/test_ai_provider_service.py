@@ -116,6 +116,38 @@ async def test_susanoox_uses_native_provider_stream(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_susanoox_stream_reports_output_truncation(monkeypatch):
+    chunks = _AsyncChunks(
+        [
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content='{"response":"partial'), finish_reason=None)],
+                usage=None,
+            ),
+            SimpleNamespace(
+                choices=[SimpleNamespace(delta=SimpleNamespace(content=None), finish_reason="length")],
+                usage=None,
+            ),
+        ]
+    )
+    client = _client(chunks)
+    monkeypatch.setattr("app.services.ai_provider_service.settings.SUSANOOX_AI_KEY", "test-key")
+    monkeypatch.setattr(AIProviderGateway, "_client", staticmethod(lambda: client))
+
+    with pytest.raises(APIException) as error:
+        await AIProviderGateway().generate_structured(
+            system_prompt="system",
+            user_prompt="user",
+            output_schema=ResultSchema,
+            provider="susanoox",
+            model="susanoox-fast",
+            on_text_delta=AsyncMock(),
+        )
+
+    assert error.value.code == "AI_OUTPUT_TRUNCATED"
+    client.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_other_providers_are_rejected():
     with pytest.raises(APIException) as error:
         await AIProviderGateway().generate_structured(

@@ -819,6 +819,30 @@ async def test_sales_assistant_executes_database_count_and_returns_result_block(
 
 
 @pytest.mark.asyncio
+async def test_sales_assistant_renders_large_list_without_repeating_rows_through_provider():
+    repository = _repository()
+    repository.execute_search_plan.return_value = [
+        {"id": f"deal-{index}", "title": f"Deal {index}"} for index in range(5)
+    ]
+    plan = CRMChatPlan(operations=[CRMSearchPlan(entity_type="deal", intent="list")])
+    runtime = _runtime(plan)
+    service = AIDomainService(
+        repository=repository,
+        runtime=runtime,
+        tool_registry=_fallback_tool_registry(),
+    )
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "deals:read"}))
+
+    result = await service.sales_assistant_chat(
+        AsyncMock(spec=AsyncSession), "List all deals in a table", None, _user()
+    )
+
+    assert result["response"] == "Found 5 matching deal record(s)."
+    assert len(result["result_blocks"][0]["results"]) == 5
+    as_async_mock(runtime.execute).assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_sales_assistant_executes_multiple_authorized_operations():
     repository = _repository()
     repository.execute_search_plan.side_effect = [
@@ -939,12 +963,13 @@ async def test_sales_assistant_uses_tenant_scoped_report_service():
         AsyncMock(return_value={"ai:generate", "reports:read", "deals:read"}),
     )
     db = AsyncMock(spec=AsyncSession)
-    user = _user()
+    user = _user(organization_id=None, is_platform_admin=True)
+    user.__dict__["_request_organization_id"] = "selected-org"
 
     result = await service.sales_assistant_chat(db, "Show pipeline velocity", None, user)
 
     as_async_mock(reports.get_pipeline_velocity_report).assert_awaited_once_with(
-        db, current_user=user
+        db, org_id="selected-org", current_user=user
     )
     as_async_mock(repository.execute_search_plan).assert_not_awaited()
     assert result["result_blocks"][0]["results"][0]["metrics"]["open_deals"] == 4
@@ -1204,6 +1229,66 @@ async def test_crm_search_executes_only_validated_tenant_scoped_plan():
     assert (
         require_await(repository.execute_search_plan).kwargs["minimum_open_deal_amount"] == 500000
     )
+    assert "tool_name" not in require_await(repository.execute_search_plan).kwargs
+    assert "report_type" not in require_await(repository.execute_search_plan).kwargs
+
+
+@pytest.mark.asyncio
+async def test_crm_search_uses_platform_admin_selected_organization():
+    repository = _repository()
+    plan = CRMSearchPlan(entity_type="company", intent="count")
+    service = AIDomainService(repository=repository, runtime=_runtime(plan))
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"}))
+    actor = _user(organization_id=None, is_platform_admin=True)
+    actor.__dict__["_request_organization_id"] = "selected-org"
+
+    await service.search_crm(
+        AsyncMock(spec=AsyncSession), "How many companies?", None, actor
+    )
+
+    assert require_await(repository.execute_search_plan).kwargs["organization_id"] == "selected-org"
+
+
+@pytest.mark.asyncio
+async def test_crm_report_search_passes_selected_organization_to_report_service():
+    repository = _repository()
+    reports = AsyncMock()
+    as_mock(reports.get_pipeline_velocity_report).return_value = {
+        "report_type": "Pipeline Velocity",
+        "metrics": {"open_deals": 4},
+    }
+    plan = CRMSearchPlan(entity_type="report", report_type="pipeline-velocity")
+    service = AIDomainService(
+        repository=repository, runtime=_runtime(plan), report_service_instance=reports
+    )
+    replace_attr(
+        service,
+        "_permission_keys",
+        AsyncMock(return_value={"ai:generate", "reports:read", "deals:read"}),
+    )
+    actor = _user(organization_id=None, is_platform_admin=True)
+    actor.__dict__["_request_organization_id"] = "selected-org"
+    db = AsyncMock(spec=AsyncSession)
+
+    result = await service.search_crm(db, "Show pipeline velocity", None, actor)
+
+    as_async_mock(reports.get_pipeline_velocity_report).assert_awaited_once_with(
+        db, org_id="selected-org", current_user=actor
+    )
+    assert result["results"][0]["metrics"]["open_deals"] == 4
+    as_async_mock(repository.execute_search_plan).assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_crm_search_passes_detail_id_to_repository():
+    repository = _repository()
+    plan = CRMSearchPlan(entity_type="task", intent="detail", record_id="task-target")
+    service = AIDomainService(repository=repository, runtime=_runtime(plan))
+    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "tasks:read"}))
+
+    await service.search_crm(AsyncMock(spec=AsyncSession), "Show task task-target", None, _user())
+
+    assert require_await(repository.execute_search_plan).kwargs["record_id"] == "task-target"
 
 
 @pytest.mark.asyncio
@@ -1432,6 +1517,28 @@ async def test_repository_count_plan_keeps_organization_scope_with_text_filter()
     assert "companies.organization_id" in sql
     assert "lower(companies.name)" in sql.lower() or "companies.name" in sql
     assert result == [{"count": 2}]
+
+
+@pytest.mark.asyncio
+async def test_repository_detail_plan_filters_exact_requested_record():
+    db = AsyncMock(spec=AsyncSession)
+    query_result = Mock()
+    as_mock(query_result.all).return_value = []
+    as_mock(db.execute).return_value = query_result
+
+    await AIRepository().execute_search_plan(
+        db,
+        organization_id="org-1",
+        entity_type="task",
+        intent="detail",
+        record_id="task-target",
+    )
+
+    statement = require_await(db.execute).args[0]
+    sql = str(statement)
+    assert "tasks.organization_id" in sql
+    assert "tasks.id" in sql
+    assert "task-target" in statement.compile().params.values()
 
 
 @pytest.mark.asyncio

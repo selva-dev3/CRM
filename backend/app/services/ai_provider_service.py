@@ -182,6 +182,12 @@ class AIProviderGateway:
                 json.loads(AIProviderGateway._json_text(raw_text))
             )
         except (json.JSONDecodeError, ValidationError) as exc:
+            logger.warning(
+                "AI structured output validation failed schema=%s error_type=%s output_chars=%s",
+                output_schema.__name__,
+                type(exc).__name__,
+                len(raw_text),
+            )
             raise APIException(
                 status_code=502,
                 code="AI_INVALID_RESPONSE",
@@ -271,6 +277,12 @@ class AIProviderGateway:
         finally:
             await client.close()
         choice = response.choices[0] if response.choices else None
+        if getattr(choice, "finish_reason", None) == "length":
+            raise APIException(
+                status_code=502,
+                code="AI_OUTPUT_TRUNCATED",
+                message="The AI answer was too long. Please request fewer records.",
+            )
         message = getattr(choice, "message", None) if choice else None
         raw_text = getattr(message, "content", None) if message else None
         if getattr(message, "refusal", None) or not isinstance(raw_text, str) or not raw_text.strip():
@@ -309,6 +321,7 @@ class AIProviderGateway:
         started = monotonic()
         raw_parts: list[str] = []
         usage = None
+        finish_reason: str | None = None
         try:
             stream = await client.chat.completions.create(
                 model=model,
@@ -334,6 +347,7 @@ class AIProviderGateway:
             async for chunk in stream:
                 usage = getattr(chunk, "usage", None) or usage
                 for choice in getattr(chunk, "choices", []) or []:
+                    finish_reason = getattr(choice, "finish_reason", None) or finish_reason
                     delta = getattr(getattr(choice, "delta", None), "content", None)
                     if isinstance(delta, str) and delta:
                         raw_parts.append(delta)
@@ -341,6 +355,12 @@ class AIProviderGateway:
         finally:
             await client.close()
         raw_text = "".join(raw_parts)
+        if finish_reason == "length":
+            raise APIException(
+                status_code=502,
+                code="AI_OUTPUT_TRUNCATED",
+                message="The AI answer was too long. Please request fewer records.",
+            )
         if not raw_text.strip():
             raise APIException(
                 status_code=502,

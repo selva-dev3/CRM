@@ -1274,7 +1274,9 @@ class AIDomainService:
                     getter = getattr(
                         self.report_service, self._REPORT_GETTERS[str(selected.report_type)]
                     )
-                    report = await getter(db, current_user=current_user)
+                    report = await getter(
+                        db, org_id=organization_id, current_user=current_user
+                    )
                     return [report]
                 return await self.repository.execute_search_plan(
                     db,
@@ -1283,7 +1285,7 @@ class AIDomainService:
                     access=await self._record_access(db, current_user, selected.entity_type),
                     related_access=await self._related_record_access(db, current_user, selected),
                     **selected.model_dump(
-                        exclude={"tool_name", "result_key", "title", "report_type", "record_id"}
+                        exclude={"tool_name", "result_key", "title", "report_type"}
                     ),
                 )
 
@@ -1320,6 +1322,25 @@ class AIDomainService:
         elif result_blocks and all(
             block.intent in {"count", "aggregate", "comparison"} for block in result_blocks
         ):
+            generated = AIChatGeneratedOutput(
+                response=" ".join(block.explanation for block in result_blocks)
+            )
+            run = plan_run
+        elif (
+            result_blocks
+            and all(
+                block.intent in {"list", "count", "aggregate", "comparison"}
+                for block in result_blocks
+            )
+            and (
+                "table" in message.casefold()
+                or any(block.intent == "list" and block.result_count >= 5 for block in result_blocks)
+            )
+            and not re.search(r"\b(create|add|schedule|assign|update|send|remind)\b", message, re.I)
+        ):
+            # The client renders the authorized rows as a table. Asking the
+            # provider to repeat a large list inside JSON can exhaust its
+            # output budget and turn an otherwise valid lookup into an error.
             generated = AIChatGeneratedOutput(
                 response=" ".join(block.explanation for block in result_blocks)
             )
@@ -2084,14 +2105,24 @@ class AIDomainService:
         self._validate_search_plan(plan)
         self._require_search_permissions(permissions, plan)
         crm_query_started = monotonic()
-        results = await self.repository.execute_search_plan(
-            db,
-            organization_id=current_user.organization_id or "",
-            current_user_id=current_user.id,
-            access=await self._record_access(db, current_user, plan.entity_type),
-            related_access=await self._related_record_access(db, current_user, plan),
-            **plan.model_dump(exclude={"result_key", "title"}),
-        )
+        if plan.entity_type == "report" and plan.report_type:
+            getter = getattr(self.report_service, self._REPORT_GETTERS[str(plan.report_type)])
+            results = [
+                await getter(
+                    db,
+                    org_id=self._organization_id(current_user),
+                    current_user=current_user,
+                )
+            ]
+        else:
+            results = await self.repository.execute_search_plan(
+                db,
+                organization_id=self._organization_id(current_user),
+                current_user_id=current_user.id,
+                access=await self._record_access(db, current_user, plan.entity_type),
+                related_access=await self._related_record_access(db, current_user, plan),
+                **plan.model_dump(exclude={"tool_name", "result_key", "title", "report_type"}),
+            )
         logger.info(
             "CRM AI search completed provider=%s model=%s crm_query_latency_ms=%s",
             getattr(run, "provider", "-"),
