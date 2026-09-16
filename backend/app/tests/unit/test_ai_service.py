@@ -624,7 +624,7 @@ async def test_sales_assistant_repair_preserves_open_deal_intent(intent, questio
         operations=[CRMSearchPlan(intent=intent, entity_type="deal", status="open", **options)]
     )
     runtime = AsyncMock()
-    provider_responses = [
+    provider_responses: list[tuple[CRMChatPlan | AIChatGeneratedOutput, SimpleNamespace]] = [
         (
             rejected_plan,
             SimpleNamespace(id="first-run", model_name="susanoox-fast", total_tokens=10),
@@ -1121,9 +1121,7 @@ async def test_confirm_action_notification_failure_does_not_report_task_failure(
     as_mock(repository.get_action_for_execution).return_value = action
     tasks = AsyncMock()
     created_task = SimpleNamespace(id="task-1")
-    tasks.repository.get_by_ai_action_id = AsyncMock(
-        side_effect=[None, created_task]
-    )
+    tasks.repository.get_by_ai_action_id = AsyncMock(side_effect=[None, created_task])
     as_mock(tasks.create_task).return_value = {"id": "task-1", "title": "Follow up"}
     tasks.notify_created.side_effect = RuntimeError("notification unavailable")
     service = AIDomainService(
@@ -1238,13 +1236,13 @@ async def test_crm_search_uses_platform_admin_selected_organization():
     repository = _repository()
     plan = CRMSearchPlan(entity_type="company", intent="count")
     service = AIDomainService(repository=repository, runtime=_runtime(plan))
-    replace_attr(service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"}))
+    replace_attr(
+        service, "_permission_keys", AsyncMock(return_value={"ai:generate", "companies:read"})
+    )
     actor = _user(organization_id=None, is_platform_admin=True)
     actor.__dict__["_request_organization_id"] = "selected-org"
 
-    await service.search_crm(
-        AsyncMock(spec=AsyncSession), "How many companies?", None, actor
-    )
+    await service.search_crm(AsyncMock(spec=AsyncSession), "How many companies?", None, actor)
 
     assert require_await(repository.execute_search_plan).kwargs["organization_id"] == "selected-org"
 

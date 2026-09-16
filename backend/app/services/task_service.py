@@ -358,9 +358,7 @@ class TaskService:
         return task_to_dict(task)
 
     @staticmethod
-    async def notify_created(
-        db: AsyncSession, task: Task, current_user: User | None
-    ) -> None:
+    async def notify_created(db: AsyncSession, task: Task, current_user: User | None) -> None:
         await notification_service.notify(
             db,
             event_name="task.created",

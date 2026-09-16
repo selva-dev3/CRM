@@ -556,7 +556,7 @@ async def test_ai_insights_route_passes_platform_admin_selected_organization(mon
         email="admin@example.com",
         is_platform_admin=True,
     )
-    actor._request_organization_id = "selected-org"
+    actor.__dict__["_request_organization_id"] = "selected-org"
     get_ai_insights = AsyncMock(return_value={"summary": "", "insights": [], "risk_deals": []})
     monkeypatch.setattr(dashboard_router.dashboard_service, "get_ai_insights", get_ai_insights)
     db = AsyncMock(spec=AsyncSession)

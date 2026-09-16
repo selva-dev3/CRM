@@ -14,7 +14,11 @@ vi.mock('@/lib/api/organizations', () => ({
   useRetryOrganizationCleanupMutation: () => ({ isPending: false }),
 }));
 vi.mock('@/lib/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/lib/api/client')>(), apiClient: { get: mocks.get } }));
-vi.mock('@/lib/organization-context', () => ({ setOrganizationContext: mocks.select, getLastOrganizationDeletion: () => null }));
+vi.mock('@/lib/organization-context', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/organization-context')>(),
+  setOrganizationContext: mocks.select,
+  getLastOrganizationDeletion: () => null,
+}));
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ cancelQueries: mocks.cancel, clear: mocks.clear }),
 }));

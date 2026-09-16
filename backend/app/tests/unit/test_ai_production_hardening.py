@@ -61,9 +61,7 @@ def test_data_classification_drops_dynamic_custom_fields_and_email_aliases():
         "id": "deal-1",
         "stage": "Prospecting",
     }
-    assert AIDataClassificationService.minimize(
-        record, allowed_sensitive_fields={"email"}
-    ) == {
+    assert AIDataClassificationService.minimize(record, allowed_sensitive_fields={"email"}) == {
         "id": "deal-1",
         "from_email": "sender@example.com",
         "to_email": "recipient@example.com",
@@ -88,7 +86,7 @@ def test_provider_model_pricing_registry_supports_known_and_unknown(monkeypatch)
                         "output_per_million": 15.0,
                         "effective_date": "2026-09-02",
                         "currency": "USD",
-                    }
+                    },
                 },
             }
         ),
@@ -126,11 +124,17 @@ def test_provider_model_pricing_registry_supports_known_and_unknown(monkeypatch)
 def test_pricing_registry_rejects_non_finite_prices(monkeypatch, invalid_price):
     monkeypatch.setattr(
         "app.services.ai_pricing_service.settings.AI_MODEL_PRICING_JSON",
-        json.dumps({"susanoox": {"susanoox-fast": {
-            "input_per_million": invalid_price,
-            "output_per_million": 1,
-            "effective_date": "2026-09-16",
-        }}}),
+        json.dumps(
+            {
+                "susanoox": {
+                    "susanoox-fast": {
+                        "input_per_million": invalid_price,
+                        "output_per_million": 1,
+                        "effective_date": "2026-09-16",
+                    }
+                }
+            }
+        ),
     )
     result = AIModelPricingRegistry().calculate(
         provider="susanoox", model="susanoox-fast", input_tokens=100, output_tokens=20
@@ -316,9 +320,7 @@ async def test_runtime_rejects_unknown_susanoox_pricing_before_provider_call(mon
     with pytest.raises(APIException) as error:
         await runtime._prepare_run(
             AsyncMock(),
-            current_user=User(
-                id="user-1", email="user@example.com", organization_id="org-1"
-            ),
+            current_user=User(id="user-1", email="user@example.com", organization_id="org-1"),
             feature="sales_assistant_plan",
             entity_type=None,
             entity_id=None,
@@ -388,7 +390,9 @@ async def test_runtime_applies_central_privacy_policy_at_provider_boundary(monke
     assert "Qualified" in sent
     assert "private@example.com" not in sent
     assert "never-export" not in sent
-    assert runtime._prepare_run.await_args.kwargs["prompt_bytes"] == (
+    prepare_call = runtime._prepare_run.await_args
+    assert prepare_call is not None
+    assert prepare_call.kwargs["prompt_bytes"] == (
         len(provider.generate_structured.await_args.kwargs["system_prompt"].encode("utf-8"))
         + len(sent.encode("utf-8"))
     )
@@ -398,8 +402,12 @@ def test_missing_provider_usage_retains_cost_reservation():
     run = AIRun(reserved_cost_usd=0.25)
     result = AIProviderResult(
         output=CRMSearchPlan(entity_type="lead"),
-        provider="susanoox", model="susanoox-fast",
-        input_tokens=0, output_tokens=0, latency_ms=1, usage_available=False,
+        provider="susanoox",
+        model="susanoox-fast",
+        input_tokens=0,
+        output_tokens=0,
+        latency_ms=1,
+        usage_available=False,
     )
     AIRuntimeService._complete_success(run, result)
     assert run.pricing_status == "unknown"

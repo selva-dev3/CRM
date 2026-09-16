@@ -68,9 +68,7 @@ class AIStreamSessionService:
         now = datetime.now(UTC)
         user = await db.scalar(select(User).where(User.id == user_id).with_for_update())
         organization = await db.scalar(
-            select(Organization)
-            .where(Organization.id == organization_id)
-            .with_for_update()
+            select(Organization).where(Organization.id == organization_id).with_for_update()
         )
         valid = bool(
             user
