@@ -67,9 +67,7 @@ class TaskRepository:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def first_active_user_id(
-        self, db: AsyncSession, *, organization_id: str
-    ) -> str | None:
+    async def first_active_user_id(self, db: AsyncSession, *, organization_id: str) -> str | None:
         return await db.scalar(
             select(User.id)
             .where(

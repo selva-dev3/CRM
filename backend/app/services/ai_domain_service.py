@@ -811,10 +811,12 @@ class AIDomainService:
         catalog: dict[str, dict[str, object]] = {
             entity: {
                 "registered_tools": [
-                    "get_dashboard_metrics"
-                    if entity == "report"
-                    else ai_tool_registry.tool_name_for_plan(
-                        CRMSearchPlan(entity_type=entity, intent="list")
+                    (
+                        "get_dashboard_metrics"
+                        if entity == "report"
+                        else ai_tool_registry.tool_name_for_plan(
+                            CRMSearchPlan(entity_type=entity, intent="list")
+                        )
                     )
                 ],
                 "fields": sorted(
@@ -1274,9 +1276,7 @@ class AIDomainService:
                     getter = getattr(
                         self.report_service, self._REPORT_GETTERS[str(selected.report_type)]
                     )
-                    report = await getter(
-                        db, org_id=organization_id, current_user=current_user
-                    )
+                    report = await getter(db, org_id=organization_id, current_user=current_user)
                     return [report]
                 return await self.repository.execute_search_plan(
                     db,
@@ -1334,7 +1334,9 @@ class AIDomainService:
             )
             and (
                 "table" in message.casefold()
-                or any(block.intent == "list" and block.result_count >= 5 for block in result_blocks)
+                or any(
+                    block.intent == "list" and block.result_count >= 5 for block in result_blocks
+                )
             )
             and not re.search(r"\b(create|add|schedule|assign|update|send|remind)\b", message, re.I)
         ):
@@ -2041,9 +2043,7 @@ class AIDomainService:
         organization_id = self._organization_id(current_user)
         totals = await self.repository.usage_totals(db, organization_id)
         config = await self.repository.get_organization_config(db, organization_id)
-        subscription = await self.repository.get_subscription_for_update(
-            db, organization_id
-        )
+        subscription = await self.repository.get_subscription_for_update(db, organization_id)
         return totals | {
             "credits_remaining": subscription.ai_credits if subscription else 0,
             "monthly_cost_limit_usd": (

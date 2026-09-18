@@ -55,7 +55,9 @@ class AIRuntimeService:
     def configured_provider_model(config: AIOrganizationConfig | None) -> tuple[str, str]:
         allowed_models = {settings.AI_MODEL, *settings.susanoox_model_pool}
         configured_model = config.model_name if config and config.model_name else settings.AI_MODEL
-        return "susanoox", configured_model if configured_model in allowed_models else settings.AI_MODEL
+        return "susanoox", (
+            configured_model if configured_model in allowed_models else settings.AI_MODEL
+        )
 
     async def configuration_readiness(self, db: AsyncSession, organization_id: str) -> str:
         """Configuration snapshot only; live credentials and quotas are checked at execution."""
@@ -220,7 +222,9 @@ class AIRuntimeService:
         # Unknown provider/model prices remain explicit. Retaining the bounded
         # reservation prevents unknown-cost requests from bypassing admission.
         run.reserved_cost_usd = (
-            0.0 if result.usage_available and result.pricing.status.value == "known" else reservation
+            0.0
+            if result.usage_available and result.pricing.status.value == "known"
+            else reservation
         )
         run.pricing_version = result.pricing.version if result.usage_available else None
         run.pricing_currency = result.pricing.currency if result.usage_available else None

@@ -238,7 +238,10 @@ async def sales_assistant_chat(
         )
 
     return await ai_domain_service.sales_assistant_chat(
-        db, payload.message, payload.conversation_id, current_user,
+        db,
+        payload.message,
+        payload.conversation_id,
+        current_user,
         ownership_guard=assert_ownership,
     )
 

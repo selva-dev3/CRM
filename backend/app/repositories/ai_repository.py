@@ -824,8 +824,7 @@ class AIRepository:
                     func.sum(
                         case(
                             (
-                                (AIRun.status == "succeeded")
-                                & (AIRun.pricing_status == "known"),
+                                (AIRun.status == "succeeded") & (AIRun.pricing_status == "known"),
                                 AIRun.estimated_cost_usd,
                             ),
                             (AIRun.status == "succeeded", AIRun.reserved_cost_usd),
@@ -986,9 +985,7 @@ class AIRepository:
         db.add(prompt)
         return prompt
 
-    async def purge_expired_conversations(
-        self, db: AsyncSession, *, now: datetime
-    ) -> int:
+    async def purge_expired_conversations(self, db: AsyncSession, *, now: datetime) -> int:
         result = await db.execute(
             delete(AIConversation).where(
                 AIConversation.expires_at.is_not(None),

@@ -7,8 +7,8 @@ from fastapi import UploadFile, status
 from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.concurrency import ensure_fresh_record
+from app.core.config import settings
 from app.core.errors import APIException, ForbiddenError, NotFoundError
 from app.models import Lead, User
 from app.repositories.company_repository import CompanyRepository

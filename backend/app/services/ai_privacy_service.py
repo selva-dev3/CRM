@@ -187,9 +187,7 @@ class AIDataClassificationService:
             "ai_response": ("previous", "earlier", "above", "those", "ones"),
         }
         return {
-            field
-            for field, terms in aliases.items()
-            if any(term in normalized for term in terms)
+            field for field, terms in aliases.items() if any(term in normalized for term in terms)
         }
 
     @classmethod
@@ -219,7 +217,16 @@ class AIDataClassificationService:
                 {
                     key: value
                     for key, value in block.items()
-                    if key in {"key", "title", "entity_type", "intent", "result_count", "explanation", "generated_at"}
+                    if key
+                    in {
+                        "key",
+                        "title",
+                        "entity_type",
+                        "intent",
+                        "result_count",
+                        "explanation",
+                        "generated_at",
+                    }
                 }
                 | {"results": records}
             )

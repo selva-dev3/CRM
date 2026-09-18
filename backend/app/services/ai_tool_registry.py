@@ -45,9 +45,7 @@ if TYPE_CHECKING:
 SensitivePolicy = Literal["safe_only", "purpose_restricted"]
 AuditPolicy = Literal["metadata_only"]
 ToolFallback = Callable[[CRMSearchPlan], Awaitable[list[dict[str, object]]]]
-ToolExecutor = Callable[
-    ["AIToolContext", str, BaseModel, ToolFallback], Awaitable[AIToolResult]
-]
+ToolExecutor = Callable[["AIToolContext", str, BaseModel, ToolFallback], Awaitable[AIToolResult]]
 
 
 @dataclass(frozen=True)
@@ -220,7 +218,9 @@ class AIToolRegistry:
             tools[name] = RegisteredAITool(
                 name=name,
                 description=description,
-                argument_schema=RecordToolArguments if name in detail_tools else SearchToolArguments,
+                argument_schema=(
+                    RecordToolArguments if name in detail_tools else SearchToolArguments
+                ),
                 result_schema=AIToolResult,
                 required_permission=permission,
                 record_scope_required=scoped,

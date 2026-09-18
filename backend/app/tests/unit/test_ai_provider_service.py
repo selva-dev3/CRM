@@ -39,7 +39,9 @@ def _client(response):
 async def test_susanoox_structured_request_is_privacy_disabled(monkeypatch):
     client = _client(
         SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content='{"response":"ok"}', refusal=None))],
+            choices=[
+                SimpleNamespace(message=SimpleNamespace(content='{"response":"ok"}', refusal=None))
+            ],
             usage=SimpleNamespace(prompt_tokens=7, completion_tokens=3),
         )
     )
@@ -64,15 +66,22 @@ async def test_susanoox_structured_request_is_privacy_disabled(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_susanoox_missing_usage_is_not_treated_as_zero_cost(monkeypatch):
-    client = _client(SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content='{"response":"ok"}', refusal=None))],
-        usage=None,
-    ))
+    client = _client(
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(message=SimpleNamespace(content='{"response":"ok"}', refusal=None))
+            ],
+            usage=None,
+        )
+    )
     monkeypatch.setattr("app.services.ai_provider_service.settings.SUSANOOX_AI_KEY", "test-key")
     monkeypatch.setattr(AIProviderGateway, "_client", staticmethod(lambda: client))
     result = await AIProviderGateway().generate_structured(
-        system_prompt="system", user_prompt="user", output_schema=ResultSchema,
-        provider="susanoox", model="susanoox-fast",
+        system_prompt="system",
+        user_prompt="user",
+        output_schema=ResultSchema,
+        provider="susanoox",
+        model="susanoox-fast",
     )
     assert result.usage_available is False
 
@@ -120,11 +129,17 @@ async def test_susanoox_stream_reports_output_truncation(monkeypatch):
     chunks = _AsyncChunks(
         [
             SimpleNamespace(
-                choices=[SimpleNamespace(delta=SimpleNamespace(content='{"response":"partial'), finish_reason=None)],
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content='{"response":"partial'), finish_reason=None
+                    )
+                ],
                 usage=None,
             ),
             SimpleNamespace(
-                choices=[SimpleNamespace(delta=SimpleNamespace(content=None), finish_reason="length")],
+                choices=[
+                    SimpleNamespace(delta=SimpleNamespace(content=None), finish_reason="length")
+                ],
                 usage=None,
             ),
         ]

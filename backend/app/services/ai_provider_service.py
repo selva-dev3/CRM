@@ -178,9 +178,7 @@ class AIProviderGateway:
     @staticmethod
     def _validate_output(raw_text: str, output_schema: type[OutputT]) -> OutputT:
         try:
-            return output_schema.model_validate(
-                json.loads(AIProviderGateway._json_text(raw_text))
-            )
+            return output_schema.model_validate(json.loads(AIProviderGateway._json_text(raw_text)))
         except (json.JSONDecodeError, ValidationError) as exc:
             logger.warning(
                 "AI structured output validation failed schema=%s error_type=%s output_chars=%s",
@@ -202,9 +200,7 @@ class AIProviderGateway:
             if not isinstance(value, dict):
                 return False
             value_type = value.get("type")
-            if value_type == "null" or (
-                isinstance(value_type, list) and "null" in value_type
-            ):
+            if value_type == "null" or (isinstance(value_type, list) and "null" in value_type):
                 return True
             alternatives = value.get("anyOf") or value.get("oneOf")
             return isinstance(alternatives, list) and any(
@@ -285,7 +281,11 @@ class AIProviderGateway:
             )
         message = getattr(choice, "message", None) if choice else None
         raw_text = getattr(message, "content", None) if message else None
-        if getattr(message, "refusal", None) or not isinstance(raw_text, str) or not raw_text.strip():
+        if (
+            getattr(message, "refusal", None)
+            or not isinstance(raw_text, str)
+            or not raw_text.strip()
+        ):
             raise APIException(
                 status_code=502,
                 code="AI_INVALID_RESPONSE",
@@ -299,7 +299,9 @@ class AIProviderGateway:
             input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
             output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
             latency_ms=int((monotonic() - started) * 1000),
-            usage_available=usage is not None and getattr(usage, "prompt_tokens", None) is not None and getattr(usage, "completion_tokens", None) is not None,
+            usage_available=usage is not None
+            and getattr(usage, "prompt_tokens", None) is not None
+            and getattr(usage, "completion_tokens", None) is not None,
         )
 
     async def _susanoox_generate_streaming(
@@ -374,7 +376,9 @@ class AIProviderGateway:
             input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
             output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
             latency_ms=int((monotonic() - started) * 1000),
-            usage_available=usage is not None and getattr(usage, "prompt_tokens", None) is not None and getattr(usage, "completion_tokens", None) is not None,
+            usage_available=usage is not None
+            and getattr(usage, "prompt_tokens", None) is not None
+            and getattr(usage, "completion_tokens", None) is not None,
         )
 
     async def _generate_once(
@@ -411,9 +415,7 @@ class AIProviderGateway:
         except APIException:
             raise
         except (openai.APIError, httpx.RequestError, TimeoutError) as exc:
-            raise self._translate_provider_error(
-                provider="susanoox", model=model, exc=exc
-            ) from exc
+            raise self._translate_provider_error(provider="susanoox", model=model, exc=exc) from exc
 
     async def generate_structured(
         self,
