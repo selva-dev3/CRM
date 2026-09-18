@@ -70,6 +70,8 @@ class AIWorkflowState:
     tokens: dict[str, str]
     leads: dict[str, str]
     provider_calls: list[dict[str, Any]] = field(default_factory=list)
+    slow_answer_started: asyncio.Event = field(default_factory=asyncio.Event)
+    resume_slow_answer: asyncio.Event = field(default_factory=asyncio.Event)
 
     def headers(self, user: str, *, organization_id: str | None = None) -> dict[str, str]:
         headers = {"Authorization": f"Bearer {self.tokens[user]}"}
@@ -367,10 +369,25 @@ async def ai_workflow() -> AsyncGenerator[AIWorkflowState, None]:
                             )
                         ]
                     )
+                elif "injection test lead" in user_prompt.lower():
+                    output = CRMChatPlan(
+                        operations=[
+                            CRMSearchPlan(
+                                tool_name="get_lead",
+                                intent="detail",
+                                entity_type="lead",
+                                record_id=state.leads["injection"],
+                            )
+                        ]
+                    )
                 else:
                     output = CRMChatPlan(
                         operations=[
-                            CRMSearchPlan(tool_name="search_leads", entity_type="lead", limit=50)
+                            CRMSearchPlan(
+                                tool_name="search_leads",
+                                entity_type="lead",
+                                limit=1 if "slow stream" in user_prompt.lower() else 50,
+                            )
                         ]
                     )
             else:
@@ -383,7 +400,8 @@ async def ai_workflow() -> AsyncGenerator[AIWorkflowState, None]:
                         '{"response":"Grounded answer based only on authorized CRM results."}'
                     )
                 if "slow stream" in user_prompt.lower():
-                    await asyncio.sleep(1.5)
+                    state.slow_answer_started.set()
+                    await asyncio.wait_for(state.resume_slow_answer.wait(), timeout=20)
             return AIProviderResult(
                 output=output,
                 provider="susanoox",
@@ -601,7 +619,7 @@ async def test_provider_boundary_failures_are_safe(client, ai_workflow, message,
 @pytest.mark.asyncio(loop_scope="module")
 async def test_crm_prompt_injection_remains_untrusted_data(client, ai_workflow):
     start = len(ai_workflow.provider_calls)
-    response = await _chat(client, ai_workflow, "all", "List authorized leads")
+    response = await _chat(client, ai_workflow, "all", "Show the injection test lead")
     assert response.status_code == 200, response.text
     assert response.json()["response"] == "Grounded answer based only on authorized CRM results."
     calls = ai_workflow.provider_calls[start:]
@@ -812,6 +830,8 @@ async def test_expired_conversation_is_immediately_unavailable(client, ai_workfl
 
 @pytest.mark.asyncio(loop_scope="module")
 async def test_stream_stops_after_real_session_revocation(client, ai_workflow):
+    ai_workflow.slow_answer_started.clear()
+    ai_workflow.resume_slow_answer.clear()
     async with ai_workflow.sessions() as db:
         conversation_count_before = await db.scalar(
             select(func.count())
@@ -825,16 +845,16 @@ async def test_stream_stops_after_real_session_revocation(client, ai_workflow):
             json={"message": "slow stream"},
         )
     )
-    await asyncio.sleep(0.25)
-    async with ai_workflow.sessions() as db:
-        token = ai_workflow.tokens["all"]
-        from hashlib import sha256
-
-        session_id = sha256(token.encode()).hexdigest()
-        session = await db.get(UserSession, session_id)
-        assert session is not None
-        session.is_current = False
-        await db.commit()
+    try:
+        await asyncio.wait_for(ai_workflow.slow_answer_started.wait(), timeout=20)
+        async with ai_workflow.sessions() as db:
+            session_id = sha256(ai_workflow.tokens["all"].encode()).hexdigest()
+            session = await db.get(UserSession, session_id)
+            assert session is not None
+            session.is_current = False
+            await db.commit()
+    finally:
+        ai_workflow.resume_slow_answer.set()
     response = await request
     assert response.status_code == 200
     assert "AI_STREAM_SESSION_REPLACED" in response.text
@@ -850,6 +870,8 @@ async def test_stream_stops_after_real_session_revocation(client, ai_workflow):
 
 @pytest.mark.asyncio(loop_scope="module")
 async def test_nonstream_chat_cannot_persist_after_session_revocation(client, ai_workflow):
+    ai_workflow.slow_answer_started.clear()
+    ai_workflow.resume_slow_answer.clear()
     user_id = ai_workflow.users["team"]
     async with ai_workflow.sessions() as db:
         before = await db.scalar(
@@ -864,13 +886,16 @@ async def test_nonstream_chat_cannot_persist_after_session_revocation(client, ai
             json={"message": "slow stream nonstream revocation"},
         )
     )
-    await asyncio.sleep(0.25)
-    async with ai_workflow.sessions() as db:
-        session_id = sha256(ai_workflow.tokens["team"].encode()).hexdigest()
-        session = await db.get(UserSession, session_id)
-        assert session is not None
-        session.is_current = False
-        await db.commit()
+    try:
+        await asyncio.wait_for(ai_workflow.slow_answer_started.wait(), timeout=20)
+        async with ai_workflow.sessions() as db:
+            session_id = sha256(ai_workflow.tokens["team"].encode()).hexdigest()
+            session = await db.get(UserSession, session_id)
+            assert session is not None
+            session.is_current = False
+            await db.commit()
+    finally:
+        ai_workflow.resume_slow_answer.set()
     response = await request
     assert response.status_code == 409, response.text
     assert response.json()["code"] == "AI_STREAM_SESSION_REPLACED"
